@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+
+# Environments & secrets
+.env
+.env.*
+*.local
+
+# Catalyst local artifacts (credentials/state — never commit)
+.catalyst/
+catalyst-debug.log
+
+# Generated data (regenerate via scripts/generate_dataset.py, DATA-001)
+data/synthetic/
+
+# Source ER design documents (supplied hackathon resource marked
+# "Karnataka Police Department | Confidential" — kept local, not published.
+# The committed authoritative catalogue is docs/schema/er-conformance-matrix.md)
+schema/
+
+# OS / editor
+.DS_Store
