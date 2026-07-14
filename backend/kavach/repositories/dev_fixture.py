@@ -111,6 +111,14 @@ _DDL = [
     """CREATE TABLE IF NOT EXISTS OccupationMaster (
         OccupationID INTEGER PRIMARY KEY, OccupationName TEXT
     )""",
+    # -- arrest/surrender events (ER-006/#11) -----------------------------
+    """CREATE TABLE IF NOT EXISTS ArrestSurrender (
+        ArrestSurrenderID INTEGER PRIMARY KEY, CaseMasterID INTEGER NOT NULL,
+        ArrestSurrenderTypeID INTEGER, ArrestSurrenderDate TEXT,
+        ArrestSurrenderStateId INTEGER, ArrestSurrenderDistrictId INTEGER,
+        PoliceStationID INTEGER, IOID INTEGER, CourtID INTEGER,
+        AccusedMasterID INTEGER, IsAccused INTEGER, IsComplainantAccused INTEGER
+    )""",
 ]
 
 
