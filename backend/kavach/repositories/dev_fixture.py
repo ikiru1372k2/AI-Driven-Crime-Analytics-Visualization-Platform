@@ -70,6 +70,47 @@ _DDL = [
     """CREATE TABLE IF NOT EXISTS CaseStatusMaster (
         CaseStatusID INTEGER PRIMARY KEY, CaseStatusName TEXT
     )""",
+    # -- geography / org hierarchy / demographic masters (ER-005/#10) -----
+    """CREATE TABLE IF NOT EXISTS State (
+        StateID INTEGER PRIMARY KEY, StateName TEXT, NationalityID INTEGER, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS District (
+        DistrictID INTEGER PRIMARY KEY, DistrictName TEXT, StateID INTEGER, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS Court (
+        CourtID INTEGER PRIMARY KEY, CourtName TEXT,
+        DistrictID INTEGER, StateID INTEGER, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS UnitType (
+        UnitTypeID INTEGER PRIMARY KEY, UnitTypeName TEXT,
+        CityDistState TEXT, Hierarchy INTEGER, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS Unit (
+        UnitID INTEGER PRIMARY KEY, UnitName TEXT, TypeID INTEGER, ParentUnit INTEGER,
+        NationalityID INTEGER, StateID INTEGER, DistrictID INTEGER, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS Rank (
+        RankID INTEGER PRIMARY KEY, RankName TEXT, Hierarchy INTEGER, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS Designation (
+        DesignationID INTEGER PRIMARY KEY, DesignationName TEXT,
+        Active INTEGER, SortOrder INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS Employee (
+        EmployeeID INTEGER PRIMARY KEY, DistrictID INTEGER, UnitID INTEGER,
+        RankID INTEGER, DesignationID INTEGER, KGID TEXT, FirstName TEXT,
+        EmployeeDOB TEXT, GenderID TEXT, BloodGroupID INTEGER,
+        PhysicallyChallenged INTEGER, AppointmentDate TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS CasteMaster (
+        caste_master_id INTEGER PRIMARY KEY, caste_master_name TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS ReligionMaster (
+        ReligionID INTEGER PRIMARY KEY, ReligionName TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS OccupationMaster (
+        OccupationID INTEGER PRIMARY KEY, OccupationName TEXT
+    )""",
 ]
 
 
