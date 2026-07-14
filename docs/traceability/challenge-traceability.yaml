@@ -1,0 +1,134 @@
+# KAVACH AI — Challenge 2 Traceability Matrix (machine-readable)
+# Issue keys are stable backlog keys; GitHub issue numbers recorded in
+# docs/planning/issue-map.json after creation.
+
+challenge:
+  id: challenge-2
+  name: AI-Driven Crime Analytics & Visualization Platform
+  event: KSP Datathon 2026 (hack2skill)
+  product: KAVACH AI
+
+requirements:
+  - id: C2-R1
+    name: Interactive dashboards replacing static sheets
+    capability_class: SUPPORTED_DIRECTLY
+    source_tables: [CaseMaster, CrimeHead, CrimeSubHead, Unit, District, CaseStatusMaster]
+    issues: [UI-001, UI-003, PROV-002, HOT-003]
+    catalyst_services: [Web Client Hosting, AppSail, Data Store, Authentication, API Gateway]
+    demo_step: D1
+    limitations: Demo runs on labelled synthetic dataset (ADR-011)
+
+  - id: C2-R2
+    name: District-level drill-down (state → district → police station)
+    capability_class: SUPPORTED_DIRECTLY
+    source_tables: [CaseMaster, Unit, UnitType, District, State]
+    issues: [ER-005, UI-002, SEC-001, HOT-003]
+    catalyst_services: [Data Store, AppSail, Web Client Hosting]
+    demo_step: D2
+    limitations: Unit hierarchy depth as documented via ParentUnit self-reference
+
+  - id: C2-R3
+    name: Spatiotemporal crime hotspots (time-of-day layered with location)
+    capability_class: SUPPORTED_DIRECTLY
+    source_tables: [CaseMaster (IncidentFromDate, IncidentToDate, latitude, longitude, CrimeMajorHeadID, CrimeMinorHeadID, PoliceStationID)]
+    issues: [HOT-001, HOT-002, HOT-003, HOT-004, UI-002]
+    catalyst_services: [Data Store, AppSail, Cron]
+    demo_step: D2
+    limitations: Records with missing/invalid coordinates excluded and counted (data-quality metric)
+
+  - id: C2-R4
+    name: Emerging trend alerts (red-zone pulsing vs historical averages)
+    capability_class: SUPPORTED_DIRECTLY
+    source_tables: [CaseMaster (CrimeRegisteredDate, IncidentFromDate, CrimeMajorHeadID, PoliceStationID)]
+    issues: [TREND-001, TREND-002, TREND-003, UI-004, EVT-002]
+    catalyst_services: [Data Store, AppSail, Signals, Circuits, Push Notifications]
+    demo_step: D1
+    limitations: Alerts fire only on statistically defensible thresholds; sparse series report insufficient history
+
+  - id: C2-R5
+    name: Relationship mapping / network & link analysis
+    capability_class: SUPPORTED_DIRECTLY
+    source_tables: [Accused, Victim, CaseMaster, Unit, CrimeHead, Court, ArrestSurrender]
+    issues: [GRAPH-001, GRAPH-002, GRAPH-003, UI-005]
+    catalyst_services: [Data Store, AppSail]
+    demo_step: D4
+    limitations: Edges are observed case co-occurrence with provenance; no unexplained associations (ADR-007)
+
+  - id: C2-R6
+    name: Repeat offender tracking across jurisdictions
+    capability_class: AI_DERIVED
+    source_tables: [Accused (AccusedMasterID, AccusedName, AgeYear, GenderID), CaseMaster, ArrestSurrender]
+    issues: [ENT-001, ENT-002, ENT-003, ENT-004, UI-007]
+    catalyst_services: [Data Store, AppSail, Authentication]
+    demo_step: D5
+    limitations: >
+      Accused.PersonID is per-case ordering (ADR-003); output is POTENTIAL identity
+      match with human review, never automatic same-person claims.
+
+  - id: C2-R7
+    name: Modus Operandi identification across incidents
+    capability_class: AI_DERIVED
+    source_tables: [CaseMaster (BriefFacts)]
+    issues: [MO-001, MO-002, MO-003, MO-004, MO-005, UI-006]
+    catalyst_services: [QuickML, NoSQL, AppSail, Circuits]
+    demo_step: D3
+    limitations: Structured schema with UNKNOWN preference (ADR-006); confidence + model version on every attribute
+
+  - id: C2-R8
+    name: Socio-economic correlation overlays
+    capability_class: EXTERNAL_DATA_REQUIRED
+    source_tables: [District, Unit; external public area-level indicators if available]
+    issues: [RISK-001, UI-008]
+    catalyst_services: [Data Store, AppSail]
+    demo_step: D7
+    limitations: >
+      Complainant demographics are NOT offender demographics and are excluded from
+      profiling features (ADR-009). Without genuine external data this ships as a
+      documented integration point, not a faked overlay.
+
+  - id: C2-R9
+    name: Predictive risk scoring (high-risk areas / emerging typologies)
+    capability_class: AI_DERIVED
+    source_tables: [CaseMaster, HotspotResult (derived), TrendAlert (derived), MoProfile (derived)]
+    issues: [RISK-001, RISK-002, RISK-003, UI-008]
+    catalyst_services: [AppSail, Data Store, Zia AutoML (optional, validated), Cron]
+    demo_step: D7
+    limitations: Area-level only (ADR-005); temporal holdout validation; explainable drivers from real contributions
+
+  - id: C2-R10
+    name: Anomaly detection with visual call-outs
+    capability_class: AI_DERIVED
+    source_tables: [CaseMaster, Victim (AgeYear, GenderID aggregate), Accused (count), MoProfile (derived)]
+    issues: [ANOM-001, ANOM-002, ANOM-003, UI-008]
+    catalyst_services: [AppSail, Data Store]
+    demo_step: D6
+    limitations: Per-factor deviation explanation mandatory; no unexplained anomaly percentages
+
+  - id: C2-R11
+    name: Evidence & explainability for every insight
+    capability_class: SUPPORTED_DIRECTLY
+    source_tables: [all — via evidence_case_ids]
+    issues: [PROV-001, PROV-002, UI-009]
+    catalyst_services: [Data Store, AppSail]
+    demo_step: D8
+    limitations: none — core architectural feature
+
+  - id: C2-R12
+    name: Event-driven / automated intelligence (moving beyond manual Excel)
+    capability_class: SUPPORTED_DIRECTLY
+    source_tables: [CaseMaster (insert events)]
+    issues: [EVT-001, EVT-002, EVT-003, EVT-004]
+    catalyst_services: [Signals, Event Functions, Circuits, Cron, Push Notifications, Mail]
+    demo_step: D9
+    limitations: Circuits/Signals availability verified in M2; documented fallback = cron-driven pipeline
+
+demo_steps:
+  D1: State overview — active trend alert visible
+  D2: Map drill-down into pulsing hotspot (Peenya-like cluster)
+  D3: Cluster → recurring MO extracted from BriefFacts
+  D4: MO cases → association graph, cross-case links
+  D5: Graph → identity resolution candidate + review action
+  D6: Anomalous case call-out with factor explanation
+  D7: Area risk score with real driver contributions
+  D8: Evidence drawer — method, version, case IDs at every step
+  D9: Insert new FIR → Signals → Circuits → live alert update
