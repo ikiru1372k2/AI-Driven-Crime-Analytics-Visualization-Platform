@@ -1,13 +1,10 @@
-"""Person-record repository (Accused, Victim, ComplainantDetails).
+"""Person-record repository (ER-003 / #8).
 
-Physical columns preserve exact documented ER names (matrix §1.2/§1.4/§1.5).
-Analytics access goes through *_analytics_views (no names; complainant views
-exclude demographic FKs per ADR-009). Full records (with names) are exposed
-only via scoped case-detail lookups — callers are responsible for scope
-enforcement (SEC-001/#71) and audit (PROV-003/#26).
-
-ADR-003 guard: this repository intentionally provides NO query keyed on
-Accused.PersonID across cases; tests assert the guard.
+HIGH-sensitivity tables. Full entities (with names) are retrievable only via
+per-case detail queries; aggregate/analytics paths use the *_analytics_view
+projections which exclude names and (for complainants) the ADR-009-protected
+demographic FKs. No query in this module keys on Accused.PersonID across
+cases (ADR-003 — enforced by tests/domain/test_person_guards.py).
 """
 
 import sqlite3
@@ -48,18 +45,17 @@ _COMPLAINANT_COLS = {
     "GenderID": "gender_id",
 }
 
-def _insert(conn: sqlite3.Connection, table: str, mapping: dict, entity) -> None:
-    cols = list(mapping)
+
+def _insert(conn: sqlite3.Connection, table: str, cols: dict, entity) -> None:
+    names = list(cols)
     conn.execute(
-        f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
-        [getattr(entity, mapping[c]) for c in cols],
+        f"INSERT INTO {table} ({', '.join(names)}) VALUES ({', '.join('?' * len(names))})",
+        [getattr(entity, cols[c]) for c in names],
     )
 
 
-class PersonRepository:
+class PersonsRepository:
     def __init__(self, conn: sqlite3.Connection):
-        # Tables are provisioned by the fixture/backing store (single
-        # authoritative DDL in dev_fixture._DDL; Catalyst tables via CAT-002).
         self._conn = conn
 
     # -- writes ----------------------------------------------------------
@@ -72,7 +68,7 @@ class PersonRepository:
     def insert_complainant(self, c: ComplainantDetails) -> None:
         _insert(self._conn, "ComplainantDetails", _COMPLAINANT_COLS, c)
 
-    # -- scoped case-detail reads (full records incl. PII) ----------------
+    # -- case-detail reads (full entities, scoped access audited upstream) --
     def accused_for_case(self, case_master_id: int) -> list[Accused]:
         rows = self._conn.execute(
             "SELECT * FROM Accused WHERE CaseMasterID = ? ORDER BY AccusedMasterID",
@@ -94,10 +90,11 @@ class PersonRepository:
         ).fetchall()
         return [ComplainantDetails(**{d: r[c] for c, d in _COMPLAINANT_COLS.items()}) for r in rows]
 
-    # -- analytics-safe projections (no names; ADR-009 exclusions) --------
-    def accused_analytics_views(self) -> list[AccusedAnalyticsView]:
+    # -- analytics reads (projections only: no names, no protected FKs) -----
+    def accused_analytics(self) -> list[AccusedAnalyticsView]:
         rows = self._conn.execute(
-            "SELECT AccusedMasterID, CaseMasterID, AgeYear, GenderID, PersonID FROM Accused"
+            "SELECT AccusedMasterID, CaseMasterID, AgeYear, GenderID, PersonID "
+            "FROM Accused ORDER BY AccusedMasterID"
         ).fetchall()
         return [
             AccusedAnalyticsView(
@@ -110,9 +107,10 @@ class PersonRepository:
             for r in rows
         ]
 
-    def victim_analytics_views(self) -> list[VictimAnalyticsView]:
+    def victims_analytics(self) -> list[VictimAnalyticsView]:
         rows = self._conn.execute(
-            "SELECT VictimMasterID, CaseMasterID, AgeYear, GenderID, VictimPolice FROM Victim"
+            "SELECT VictimMasterID, CaseMasterID, AgeYear, GenderID, VictimPolice "
+            "FROM Victim ORDER BY VictimMasterID"
         ).fetchall()
         return [
             VictimAnalyticsView(
@@ -125,9 +123,10 @@ class PersonRepository:
             for r in rows
         ]
 
-    def complainant_analytics_views(self) -> list[ComplainantAnalyticsView]:
+    def complainants_analytics(self) -> list[ComplainantAnalyticsView]:
         rows = self._conn.execute(
-            "SELECT ComplainantID, CaseMasterID, AgeYear, GenderID FROM ComplainantDetails"
+            "SELECT ComplainantID, CaseMasterID, AgeYear, GenderID "
+            "FROM ComplainantDetails ORDER BY ComplainantID"
         ).fetchall()
         return [
             ComplainantAnalyticsView(
