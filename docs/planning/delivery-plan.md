@@ -75,8 +75,8 @@ CAT-001 ─┼─▶ CAT-002 ─▶ DATA-002 ◀─ DATA-001 ◀─ ER-001
 
 ## Master Delivery Index
 
-- Milestones: 11 (M0–M10) · Epics: 16 · Executable issues: 66 · Total issues: 82
-- Priority: P0 = 40 · P1 = 20 · P2 = 6 (counts verified in issue-map.json after creation)
+- Milestones: 11 (M0–M10) · Epics: 16 · Executable issues: 68 · Total GitHub issues: 84 (#1–#84, see issue-map.json)
+- Priority (executable): P0 = 48 · P1 = 19 · P2 = 1
 - Highest-risk issues: MO-002 (QuickML capability), CAT-002 (Data Store limits), RISK-002 (validation honesty), EVT-002 (Circuits availability), DEMO-005 (deployment)
 - Catalyst-dependent: all CAT-*, MO-002, EVT-*, DEMO-003, DEMO-005
 - ER conformance issues: ER-001…ER-007 · ML validation: HOT-004, TREND-003, MO-005, ENT-004, ANOM-003, RISK-003 · Security: CAT-003, CAT-004, SEC-001..003, PROV-003 · Demo-critical: DEMO-001..005, UI-002, UI-003, UI-009
