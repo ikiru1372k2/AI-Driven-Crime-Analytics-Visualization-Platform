@@ -43,6 +43,33 @@ _DDL = [
         ComplainantName TEXT, AgeYear INTEGER,
         OccupationID INTEGER, ReligionID INTEGER, CasteID INTEGER, GenderID TEXT
     )""",
+    # -- legal & classification lookups (ER-004/#9) ----------------------
+    """CREATE TABLE IF NOT EXISTS Act (
+        ActCode TEXT PRIMARY KEY, ActDescription TEXT, ShortName TEXT, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS Section (
+        ActCode TEXT NOT NULL, SectionCode TEXT NOT NULL,
+        SectionDescription TEXT, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS CrimeHeadActSection (
+        CrimeHeadID INTEGER NOT NULL, ActCode TEXT NOT NULL, SectionCode TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS CrimeHead (
+        CrimeHeadID INTEGER PRIMARY KEY, CrimeGroupName TEXT, Active INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS CrimeSubHead (
+        CrimeSubHeadID INTEGER PRIMARY KEY, CrimeHeadID INTEGER,
+        CrimeHeadName TEXT, SeqID INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS CaseCategory (
+        CaseCategoryID INTEGER PRIMARY KEY, LookupValue TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS GravityOffence (
+        GravityOffenceID INTEGER PRIMARY KEY, LookupValue TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS CaseStatusMaster (
+        CaseStatusID INTEGER PRIMARY KEY, CaseStatusName TEXT
+    )""",
 ]
 
 
