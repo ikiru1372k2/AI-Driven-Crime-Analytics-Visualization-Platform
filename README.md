@@ -1,5 +1,7 @@
 # KAVACH AI — Karnataka Crime Intelligence & Analytical Platform
 
+[![CI](https://github.com/ikiru1372k2/AI-Driven-Crime-Analytics-Visualization-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/ikiru1372k2/AI-Driven-Crime-Analytics-Visualization-Platform/actions/workflows/ci.yml)
+
 **From Fragmented FIR Records to Connected, Explainable and Proactive Crime Intelligence.**
 
 KSP Datathon 2026 · Challenge 2 — *AI-Driven Crime Analytics & Visualization Platform* · Deployed on **Catalyst by Zoho** (mandatory, [ADR-001](docs/architecture/adr/ADR-001-catalyst-native-architecture.md)).
