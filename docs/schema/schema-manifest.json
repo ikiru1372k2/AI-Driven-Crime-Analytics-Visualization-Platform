@@ -1,0 +1,138 @@
+{
+  "_meta": {
+    "source": "Police FIR System — ER Diagram (Karnataka Police Department)",
+    "authoritative_doc": "docs/schema/er-conformance-matrix.md",
+    "version": "1.0",
+    "note": "Exact documented physical columns. Referenced-but-undefined tables (Inv_OccuranceTime, inv_arrestsurrenderaccused) are intentionally absent (matrix §2)."
+  },
+  "CaseMaster": {
+    "pk": ["CaseMasterID"],
+    "columns": ["CaseMasterID", "CrimeNo", "CaseNo", "CrimeRegisteredDate", "PolicePersonID", "PoliceStationID", "CaseCategoryID", "GravityOffenceID", "CrimeMajorHeadID", "CrimeMinorHeadID", "CaseStatusID", "CourtID", "IncidentFromDate", "IncidentToDate", "InfoReceivedPSDate", "latitude", "longitude", "BriefFacts"],
+    "fks": [["PolicePersonID", "Employee", "EmployeeID"], ["PoliceStationID", "Unit", "UnitID"], ["CaseCategoryID", "CaseCategory", "CaseCategoryID"], ["GravityOffenceID", "GravityOffence", "GravityOffenceID"], ["CrimeMajorHeadID", "CrimeHead", "CrimeHeadID"], ["CrimeMinorHeadID", "CrimeSubHead", "CrimeSubHeadID"], ["CaseStatusID", "CaseStatusMaster", "CaseStatusID"], ["CourtID", "Court", "CourtID"]]
+  },
+  "ComplainantDetails": {
+    "pk": ["ComplainantID"],
+    "columns": ["ComplainantID", "CaseMasterID", "ComplainantName", "AgeYear", "OccupationID", "ReligionID", "CasteID", "GenderID"],
+    "fks": [["CaseMasterID", "CaseMaster", "CaseMasterID"], ["OccupationID", "OccupationMaster", "OccupationID"], ["ReligionID", "ReligionMaster", "ReligionID"], ["CasteID", "CasteMaster", "caste_master_id"]]
+  },
+  "ActSectionAssociation": {
+    "pk": [],
+    "columns": ["CaseMasterID", "ActID", "SectionID", "ActOrderID", "SectionOrderID"],
+    "fks": [["CaseMasterID", "CaseMaster", "CaseMasterID"], ["ActID", "Act", "ActCode"], ["SectionID", "Section", "SectionCode"]]
+  },
+  "Victim": {
+    "pk": ["VictimMasterID"],
+    "columns": ["VictimMasterID", "CaseMasterID", "VictimName", "AgeYear", "GenderID", "VictimPolice"],
+    "fks": [["CaseMasterID", "CaseMaster", "CaseMasterID"]]
+  },
+  "Accused": {
+    "pk": ["AccusedMasterID"],
+    "columns": ["AccusedMasterID", "CaseMasterID", "AccusedName", "AgeYear", "GenderID", "PersonID"],
+    "fks": [["CaseMasterID", "CaseMaster", "CaseMasterID"]]
+  },
+  "ArrestSurrender": {
+    "pk": ["ArrestSurrenderID"],
+    "columns": ["ArrestSurrenderID", "CaseMasterID", "ArrestSurrenderTypeID", "ArrestSurrenderDate", "ArrestSurrenderStateId", "ArrestSurrenderDistrictId", "PoliceStationID", "IOID", "CourtID", "AccusedMasterID", "IsAccused", "IsComplainantAccused"],
+    "fks": [["CaseMasterID", "CaseMaster", "CaseMasterID"], ["ArrestSurrenderStateId", "State", "StateID"], ["ArrestSurrenderDistrictId", "District", "DistrictID"], ["PoliceStationID", "Unit", "UnitID"], ["IOID", "Employee", "EmployeeID"], ["CourtID", "Court", "CourtID"], ["AccusedMasterID", "Accused", "AccusedMasterID"]]
+  },
+  "Act": {
+    "pk": ["ActCode"],
+    "columns": ["ActCode", "ActDescription", "ShortName", "Active"],
+    "fks": []
+  },
+  "Section": {
+    "pk": [],
+    "columns": ["ActCode", "SectionCode", "SectionDescription", "Active"],
+    "fks": [["ActCode", "Act", "ActCode"]]
+  },
+  "CrimeHeadActSection": {
+    "pk": [],
+    "columns": ["CrimeHeadID", "ActCode", "SectionCode"],
+    "fks": [["CrimeHeadID", "CrimeHead", "CrimeHeadID"], ["ActCode", "Act", "ActCode"]]
+  },
+  "CrimeHead": {
+    "pk": ["CrimeHeadID"],
+    "columns": ["CrimeHeadID", "CrimeGroupName", "Active"],
+    "fks": []
+  },
+  "CrimeSubHead": {
+    "pk": ["CrimeSubHeadID"],
+    "columns": ["CrimeSubHeadID", "CrimeHeadID", "CrimeHeadName", "SeqID"],
+    "fks": [["CrimeHeadID", "CrimeHead", "CrimeHeadID"]]
+  },
+  "CasteMaster": {
+    "pk": ["caste_master_id"],
+    "columns": ["caste_master_id", "caste_master_name"],
+    "fks": []
+  },
+  "ReligionMaster": {
+    "pk": ["ReligionID"],
+    "columns": ["ReligionID", "ReligionName"],
+    "fks": []
+  },
+  "OccupationMaster": {
+    "pk": ["OccupationID"],
+    "columns": ["OccupationID", "OccupationName"],
+    "fks": []
+  },
+  "CaseStatusMaster": {
+    "pk": ["CaseStatusID"],
+    "columns": ["CaseStatusID", "CaseStatusName"],
+    "fks": []
+  },
+  "Court": {
+    "pk": ["CourtID"],
+    "columns": ["CourtID", "CourtName", "DistrictID", "StateID", "Active"],
+    "fks": [["DistrictID", "District", "DistrictID"], ["StateID", "State", "StateID"]]
+  },
+  "District": {
+    "pk": ["DistrictID"],
+    "columns": ["DistrictID", "DistrictName", "StateID", "Active"],
+    "fks": [["StateID", "State", "StateID"]]
+  },
+  "State": {
+    "pk": ["StateID"],
+    "columns": ["StateID", "StateName", "NationalityID", "Active"],
+    "fks": []
+  },
+  "Unit": {
+    "pk": ["UnitID"],
+    "columns": ["UnitID", "UnitName", "TypeID", "ParentUnit", "NationalityID", "StateID", "DistrictID", "Active"],
+    "fks": [["TypeID", "UnitType", "UnitTypeID"], ["ParentUnit", "Unit", "UnitID"], ["StateID", "State", "StateID"], ["DistrictID", "District", "DistrictID"]]
+  },
+  "UnitType": {
+    "pk": ["UnitTypeID"],
+    "columns": ["UnitTypeID", "UnitTypeName", "CityDistState", "Hierarchy", "Active"],
+    "fks": []
+  },
+  "Rank": {
+    "pk": ["RankID"],
+    "columns": ["RankID", "RankName", "Hierarchy", "Active"],
+    "fks": []
+  },
+  "Designation": {
+    "pk": ["DesignationID"],
+    "columns": ["DesignationID", "DesignationName", "Active", "SortOrder"],
+    "fks": []
+  },
+  "Employee": {
+    "pk": ["EmployeeID"],
+    "columns": ["EmployeeID", "DistrictID", "UnitID", "RankID", "DesignationID", "KGID", "FirstName", "EmployeeDOB", "GenderID", "BloodGroupID", "PhysicallyChallenged", "AppointmentDate"],
+    "fks": [["DistrictID", "District", "DistrictID"], ["UnitID", "Unit", "UnitID"], ["RankID", "Rank", "RankID"], ["DesignationID", "Designation", "DesignationID"]]
+  },
+  "CaseCategory": {
+    "pk": ["CaseCategoryID"],
+    "columns": ["CaseCategoryID", "LookupValue"],
+    "fks": []
+  },
+  "GravityOffence": {
+    "pk": ["GravityOffenceID"],
+    "columns": ["GravityOffenceID", "LookupValue"],
+    "fks": []
+  },
+  "ChargesheetDetails": {
+    "pk": ["CSID"],
+    "columns": ["CSID", "CaseMasterID", "csdate", "cstype", "PolicePersonID"],
+    "fks": [["CaseMasterID", "CaseMaster", "CaseMasterID"], ["PolicePersonID", "Employee", "EmployeeID"]]
+  }
+}
