@@ -26,7 +26,7 @@ data/synthetic/
 # Source ER design documents (supplied hackathon resource marked
 # "Karnataka Police Department | Confidential" — kept local, not published.
 # The committed authoritative catalogue is docs/schema/er-conformance-matrix.md)
-schema/
+/schema/
 
 # OS / editor
 .DS_Store
