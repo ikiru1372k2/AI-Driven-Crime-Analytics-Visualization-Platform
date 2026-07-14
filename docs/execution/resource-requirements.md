@@ -11,7 +11,7 @@ policy). Never place secret values in this file or in GitHub issues.
 
 **Resource:** Authenticated Zoho Catalyst project (owner login + promotion credits).
 
-**Required by:** #16 (CAT-001), #17 (CAT-002), #18 (CAT-003 live auth), #19 (CAT-004), #20 (CAT-005), #21 (CAT-006), #40 (MO-002 live QuickML), #74–#77 (EVT-*), #82, #84.
+**Required by:** #15 (DATA-002 Data Store load + Stratus), #16 (CAT-001), #17 (CAT-002), #18 (CAT-003 live auth), #19 (CAT-004), #20 (CAT-005), #21 (CAT-006), #38 (MO-002 live QuickML), #74–#77 (EVT-*), #82, #84.
 
 **Exact requirement:**
 1. Zoho account login for `catalyst login` (interactive browser flow — cannot be performed autonomously).
