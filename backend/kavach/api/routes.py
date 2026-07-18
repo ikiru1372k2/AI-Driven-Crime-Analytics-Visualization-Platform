@@ -47,7 +47,7 @@ def get_cases(
 def get_hotspots(
     subhead_id: int | None = Query(default=None, description="crime sub-head, e.g. 71=Robbery"),
     district_id: int | None = Query(default=None),
-    days: int | None = Query(default=None, description="recency window (days back from latest case)"),
+    days: int | None = Query(default=None, description="recency window: days back from latest"),
     eps_m: float = Query(default=400.0, gt=0, le=5000, description="cluster radius in metres"),
     min_samples: int = Query(default=8, ge=2, le=100),
 ) -> dict:

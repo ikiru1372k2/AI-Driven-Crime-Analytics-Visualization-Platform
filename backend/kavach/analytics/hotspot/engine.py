@@ -85,7 +85,7 @@ def detect_hotspots(
         clon = float(c["longitude"].mean())
         radius = max(
             _haversine_m(clat, clon, la, lo)
-            for la, lo in zip(c["latitude"], c["longitude"])
+            for la, lo in zip(c["latitude"], c["longitude"], strict=True)
         )
         hours = pd.to_datetime(c["incident_from"], errors="coerce").dt.hour.dropna()
         hour_hist = [int((hours == h).sum()) for h in range(24)]
