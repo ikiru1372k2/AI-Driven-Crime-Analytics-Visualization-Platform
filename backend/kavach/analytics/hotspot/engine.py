@@ -102,6 +102,7 @@ def detect_hotspots(
             "hour_histogram": hour_hist,
             "night_share": round(night / len(c), 3),
             "sample_case_ids": c["CaseMasterID"].head(10).tolist(),
+            "case_ids": c["CaseMasterID"].tolist(),
         })
 
     hotspots.sort(key=lambda h: h["case_count"], reverse=True)
