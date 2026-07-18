@@ -25,64 +25,15 @@ import {
   type NodeType,
   type Subgraph,
 } from "../lib/graphApi";
-
-/** Node colours by type (status-neutral palette; classification colours
- * are reserved for edges so inference-vs-fact stays unambiguous). */
-const NODE_COLORS: Record<string, string> = {
-  CASE: "#4f7cc9",
-  ACCUSED_RECORD: "#a76fb9",
-  VICTIM_RECORD: "#5aa9a3",
-  POLICE_STATION: "#7d8a97",
-  DISTRICT: "#5b6d84",
-  CRIME_HEAD: "#c98a4f",
-  CRIME_SUBHEAD: "#c9a94f",
-  COURT: "#8a7dc9",
-  SECTION: "#6f8f5a",
-};
-
-/** Edge styling by classification — the provenance-first rule (#25/#43):
- * observed FACT restatements: solid grey; DERIVED_METRIC co-occurrence:
- * solid blue; POTENTIAL_ASSOCIATION (identity candidates / MO similarity):
- * dashed amber; HUMAN_CONFIRMED identity: solid green, heavy. */
-const EDGE_STYLE: Record<string, { color: string; style: string; width: number }> = {
-  FACT: { color: "#9aa4ae", style: "solid", width: 1.5 },
-  DERIVED_METRIC: { color: "#4f7cc9", style: "solid", width: 2.5 },
-  STATISTICAL_INFERENCE: { color: "#4f7cc9", style: "solid", width: 2.5 },
-  AI_DERIVED: { color: "#d9a13b", style: "dashed", width: 2.5 },
-  POTENTIAL_ASSOCIATION: { color: "#d9a13b", style: "dashed", width: 2.5 },
-  HUMAN_CONFIRMED: { color: "#3c9a5f", style: "solid", width: 4 },
-};
-
-const SEED_TYPES: NodeType[] = ["CASE", "ACCUSED_RECORD", "POLICE_STATION", "DISTRICT"];
-
-/** A resolvable example id per seed type — used for the placeholder and to
- *  auto-fill a valid id when the type changes, so you can't seed a CASE id
- *  against an ACCUSED_RECORD (which 404s as "unknown node"). */
-const SEED_EXAMPLES: Record<string, string> = {
-  CASE: "7231",
-  ACCUSED_RECORD: "2238", // "Ravi Kumar" — the identity fragment on the Identities tab
-  POLICE_STATION: "4430", // Peenya PS (the hotspot)
-  DISTRICT: "44", // Bengaluru City
-};
-
-/** Default sample seed — case 7231, whose accused is the "Ravi Kumar" identity
- *  fragment surfaced on the Identities tab (coherent cross-feature demo). */
-const DEFAULT_SEED_CASE = SEED_EXAMPLES.CASE;
-
-/** Lenses — like a map's view switcher, each shows one relationship dimension
- *  so the graph isn't all node types at once. CASE is the connective spine and
- *  the seed node is always kept. `types: null` = show everything. */
-type LensKey = "full" | "people" | "places" | "charge";
-const LENSES: { key: LensKey; label: string; types: Set<string> | null }[] = [
-  { key: "full", label: "Full", types: null },
-  { key: "people", label: "People", types: new Set(["CASE", "ACCUSED_RECORD", "VICTIM_RECORD"]) },
-  { key: "places", label: "Places", types: new Set(["CASE", "POLICE_STATION", "DISTRICT"]) },
-  {
-    key: "charge",
-    label: "Charge",
-    types: new Set(["CASE", "CRIME_HEAD", "CRIME_SUBHEAD", "SECTION", "COURT"]),
-  },
-];
+import {
+  DEFAULT_SEED_CASE,
+  EDGE_STYLE,
+  LENSES,
+  type LensKey,
+  NODE_COLORS,
+  SEED_EXAMPLES,
+  SEED_TYPES,
+} from "./graphConfig";
 
 export interface GraphSeed {
   type: NodeType;
@@ -164,6 +115,15 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     fetchNodeDetail(type, refId)
       .then(setDetail)
       .catch((e) => setError(String(e)));
+  }, []);
+
+  // back out of a cluster focus: clear the dimming and zoom out to the full view
+  const zoomOut = useCallback(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.elements().removeClass("dim");
+    setFocusId(null);
+    cy.animate({ fit: { eles: cy.elements(), padding: 60 }, duration: 400 });
   }, []);
 
   // (re)draw cytoscape when the merged element set changes
@@ -309,11 +269,18 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         { selector: ".dim", style: { opacity: 0.08 } },
       ],
     });
-    // tap a node: pull its linked records into view (expand) and zoom to that
-    // cluster, rather than only opening a card
+    // tap a node:
+    //  - a CASE is a focal record -> navigate to it (reseed, replaces the view)
+    //    so it never accumulates alongside the form's case
+    //  - a hub (place/person/charge) -> reveal its cluster in place and zoom
     cy.on("tap", "node", (ev) => {
       const [type, ...rest] = (ev.target.id() as string).split(":");
       const id = rest.join(":");
+      if (type === "CASE") {
+        openNode("CASE", id);
+        onSeed({ type: "CASE", id });
+        return;
+      }
       openNode(type as NodeType, id);
       setFocusId(ev.target.id() as string);
       void load(type as NodeType, id, true); // merge = keep the current graph, add neighbours
@@ -348,7 +315,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [merged, mode, openNode, load, theme, lens, seedType, seedId]);
+  }, [merged, mode, openNode, load, onSeed, theme, lens, seedType, seedId]);
 
   // zoom-to-cluster: when a node is focused (tapped), dim the rest and animate
   // the camera to fit that node and its linked records
@@ -478,6 +445,11 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       </div>
 
       <div className="graph-stage">
+        {mode === "canvas" && (
+          <button className="graph-zoomout" onClick={zoomOut} title="Zoom out to the full graph">
+            &#8592; Zoom out
+          </button>
+        )}
         {mode === "canvas" && (
           <div className="graph-lens-overlay" role="group" aria-label="Graph view lens">
             {LENSES.map((l) => (
