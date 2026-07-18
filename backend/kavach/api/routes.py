@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
+from kavach.analytics.entity import resolve_identities
 from kavach.analytics.hotspot import detect_hotspots
 from kavach.analytics.trends import detect_trends
 from kavach.api import data
@@ -82,6 +83,15 @@ def get_trends(
         min_z=min_z,
         min_recent=min_recent,
     )
+
+
+@router.get("/identities")
+def get_identities(
+    district_id: int | None = Query(default=None),
+    min_cluster_size: int = Query(default=2, ge=2, le=20),
+) -> dict:
+    """Candidate cross-FIR identities for human review (explainable, no auto-merge)."""
+    return resolve_identities(district_id=district_id, min_cluster_size=min_cluster_size)
 
 
 @router.get("/districts")

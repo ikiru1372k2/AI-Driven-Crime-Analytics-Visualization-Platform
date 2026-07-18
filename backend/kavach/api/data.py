@@ -2,7 +2,7 @@
 
 Reads the generated CSVs from ``data/synthetic`` into pandas DataFrames, joins
 human-readable lookup names, and caches the result. This is deliberately the
-LOCAL adapter — the Catalyst Data Store adapter (CAT-002) will later expose the
+LOCAL adapter - the Catalyst Data Store adapter (CAT-002) will later expose the
 same enriched-case shape behind the same functions, so API/analytics code does
 not change when persistence moves to Catalyst.
 
@@ -31,7 +31,7 @@ def _read(name: str) -> pd.DataFrame:
     path = data_dir() / f"{name}.csv"
     if not path.exists():
         raise FileNotFoundError(
-            f"{path} not found — generate the dataset first: "
+            f"{path} not found - generate the dataset first: "
             "PYTHONPATH=backend backend/.venv/Scripts/python.exe scripts/generate_dataset.py"
         )
     return pd.read_csv(path, dtype=str, keep_default_na=False)
@@ -132,6 +132,32 @@ def case_records(
     out["registered_date"] = out["registered_date"].dt.strftime("%Y-%m-%d")
     out["incident_from"] = out["incident_from"].dt.strftime("%Y-%m-%d %H:%M")
     return out.where(out.notna(), None).to_dict(orient="records")
+
+
+def accused_records() -> list[dict]:
+    """Accused persons joined to their case's district, for entity resolution.
+
+    Deliberately does NOT expose PersonID: identity must be *discovered* from
+    attributes across FIRs, never joined on the per-record PersonID (ADR-003).
+    """
+    cols = ["AccusedMasterID", "CaseMasterID", "AccusedName", "AgeYear", "GenderID"]
+    acc = _read("Accused")[cols]
+    cases = enriched_cases()[["CaseMasterID", "district_id", "district_name"]]
+    df = acc.merge(cases, on="CaseMasterID", how="left")
+    df["age"] = pd.to_numeric(df["AgeYear"], errors="coerce")
+    out = df.rename(
+        columns={
+            "AccusedMasterID": "accused_id",
+            "CaseMasterID": "case_id",
+            "AccusedName": "name",
+            "GenderID": "gender",
+        }
+    )[["accused_id", "case_id", "name", "age", "gender", "district_id", "district_name"]]
+    out = out.where(out.notna(), None)
+    recs = out.to_dict(orient="records")
+    for r in recs:  # age -> int|None for clean JSON / comparison
+        r["age"] = None if r["age"] is None else int(r["age"])
+    return recs
 
 
 def district_stats(window_days: int = 30) -> list[dict]:
