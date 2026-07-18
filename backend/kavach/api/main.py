@@ -1,5 +1,7 @@
 """FastAPI application entry point (Catalyst AppSail target, ADR-010)."""
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,10 +20,16 @@ app = FastAPI(
 
 # Local dev: the Vite frontend runs on a separate origin. Vite falls through to
 # the next free port (5173, 5174, …) when one is taken, so allow any localhost
-# port for the dev path. (The Catalyst deployment serves same-origin — CAT-*.)
+# port for the dev path. Hosted (CAT-006): the Web Client origin is allowed via
+# KAVACH_ALLOWED_ORIGINS (comma-separated env, set on AppSail — never in repo).
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origins=[
+        o.strip()
+        for o in os.environ.get("KAVACH_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
