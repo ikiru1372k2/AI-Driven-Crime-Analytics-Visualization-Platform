@@ -21,6 +21,10 @@ import pandas as pd
 
 from kavach.api import data
 
+#: Provenance identity of this engine (PROV-002 envelope, PROV-001 runs).
+METHOD_NAME = "robust_weekly_modified_z"
+METHOD_VERSION = "1.0.0"
+
 #: 0.6745 = 0.75 quantile of the normal; scales MAD to a std-equivalent so the
 #: modified z-score is comparable to an ordinary z-score.
 _MAD_TO_SIGMA = 1.4826

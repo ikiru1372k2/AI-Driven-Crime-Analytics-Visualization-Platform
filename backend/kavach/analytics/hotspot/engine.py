@@ -26,6 +26,10 @@ from kavach.api import data
 
 _EARTH_RADIUS_M = 6_371_000.0
 
+#: Provenance identity of this engine (PROV-002 envelope, PROV-001 runs).
+METHOD_NAME = "dbscan_haversine"
+METHOD_VERSION = "1.0.0"
+
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     p1, p2 = math.radians(lat1), math.radians(lat2)

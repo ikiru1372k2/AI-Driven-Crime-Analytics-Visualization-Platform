@@ -16,4 +16,19 @@ def test_health() -> None:
 def test_health_deps_reports_modules() -> None:
     r = client.get("/health/deps")
     assert r.status_code == 200
-    assert set(r.json()["dependencies"]) == {"numpy", "pandas", "sklearn", "networkx"}
+    deps = r.json()["dependencies"]
+    assert set(deps) == {"numpy", "pandas", "sklearn", "networkx"}
+    # scientific stack must actually be importable (CAT-005 AppSail check)
+    assert all(deps.values()), deps
+
+
+def test_health_datastore_reports_unconfigured_locally(monkeypatch) -> None:
+    """No Catalyst env → explicit 'unconfigured', never a fake success."""
+    import kavach.config as config
+
+    monkeypatch.setattr(
+        config, "settings", config.Settings(env="local", catalyst_project_id=None)
+    )
+    r = client.get("/health/datastore")
+    assert r.status_code == 200
+    assert r.json()["status"] == "unconfigured"
