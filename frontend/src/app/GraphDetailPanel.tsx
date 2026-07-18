@@ -10,7 +10,6 @@ interface Props {
   onClose: () => void;
   onNavigate: (type: NodeType, id: string) => void;
   onNavigateCase: (caseId: string) => void;
-  onExpand: (type: NodeType, id: string) => void;
 }
 
 export function GraphDetailPanel({
@@ -19,7 +18,6 @@ export function GraphDetailPanel({
   onClose,
   onNavigate,
   onNavigateCase,
-  onExpand,
 }: Props) {
   if (detail) {
     return (
@@ -68,20 +66,12 @@ export function GraphDetailPanel({
             <li className="muted">and {detail.linked_cases.length - 12} more</li>
           )}
         </ul>
-        <div className="panel-actions">
-          <button
-            className="nav-btn"
-            onClick={() => onNavigate(detail.node.node_type, detail.node.entity_ref_id)}
-          >
-            Navigate here →
-          </button>
-          <button
-            className="expand"
-            onClick={() => onExpand(detail.node.node_type, detail.node.entity_ref_id)}
-          >
-            Expand
-          </button>
-        </div>
+        <button
+          className="nav-btn"
+          onClick={() => onNavigate(detail.node.node_type, detail.node.entity_ref_id)}
+        >
+          Navigate here →
+        </button>
         {detail.intelligence.limitations?.map((l) => (
           <p key={l} className="muted small">
             {l}

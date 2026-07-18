@@ -153,6 +153,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const navigate = useCallback(
     (s: GraphSeed) => {
       snapshot();
+      setLens("full"); // show the destination's full associations, not a filtered slice
       onSeed(s);
     },
     [snapshot, onSeed],
@@ -531,7 +532,6 @@ export function GraphView({ seed, onSeed, theme }: Props) {
               navigate({ type, id });
             }}
             onNavigateCase={(id) => navigate({ type: "CASE", id })}
-            onExpand={expand}
           />
         )}
       </div>
