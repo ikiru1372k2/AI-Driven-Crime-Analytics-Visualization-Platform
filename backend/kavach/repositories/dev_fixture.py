@@ -122,8 +122,10 @@ _DDL = [
 ]
 
 
-def connect(path: str = ":memory:") -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+def connect(path: str = ":memory:", *, check_same_thread: bool = True) -> sqlite3.Connection:
+    """check_same_thread=False is for read-only multi-thread serving (the API
+    graph store); writers must stay single-threaded."""
+    conn = sqlite3.connect(path, check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     for ddl in _DDL:
         conn.execute(ddl)
