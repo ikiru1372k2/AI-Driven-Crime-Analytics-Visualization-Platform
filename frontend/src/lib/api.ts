@@ -132,3 +132,51 @@ export const fetchHotspots = (f: Filters, epsM = 400, minSamples = 8) =>
     eps_m: epsM,
     min_samples: minSamples,
   });
+
+// --- trends / alerts (Phase 4) ---
+
+export type Severity = "critical" | "serious" | "warning" | null;
+
+export interface TrendAlert {
+  rank: number;
+  level: "station" | "subhead";
+  subhead_id: string;
+  subhead_name: string;
+  station_id: string | null;
+  station_name: string | null;
+  district_name: string | null;
+  z_score: number;
+  severity: Severity;
+  direction: "up" | "down";
+  recent_count: number;
+  recent_weekly: number;
+  baseline_weekly_median: number;
+  baseline_mad: number;
+  pct_change: number | null;
+  window: { from: string; to: string };
+  weekly_series: number[]; // oldest -> newest
+  sample_case_ids: string[];
+}
+
+export interface TrendsResponse {
+  synthetic: boolean;
+  params: Record<string, unknown>;
+  alert_count: number;
+  alerts: TrendAlert[];
+}
+
+export interface Overview {
+  synthetic: boolean;
+  total_cases: number;
+  date_range: { from: string | null; to: string | null };
+  map_center: { lat: number; lon: number };
+  alert_tally: { critical: number; serious: number; warning: number };
+  top_trends: TrendAlert[];
+  top_hotspots: Hotspot[];
+  hotspot_count: number;
+}
+
+export const fetchTrends = (level: "station" | "subhead" = "station", minZ = 2.5) =>
+  getJSON<TrendsResponse>("/api/trends", { level, min_z: minZ });
+
+export const fetchOverview = () => getJSON<Overview>("/api/overview");

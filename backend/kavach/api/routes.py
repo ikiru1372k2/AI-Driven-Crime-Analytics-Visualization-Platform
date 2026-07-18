@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from kavach.analytics.hotspot import detect_hotspots
+from kavach.analytics.trends import detect_trends
 from kavach.api import data
 
 router = APIRouter(prefix="/api", tags=["analytics"])
@@ -59,3 +60,54 @@ def get_hotspots(
         eps_m=eps_m,
         min_samples=min_samples,
     )
+
+
+@router.get("/trends")
+def get_trends(
+    level: str = Query(default="station", pattern="^(station|subhead)$"),
+    subhead_id: int | None = Query(default=None),
+    district_id: int | None = Query(default=None),
+    baseline_weeks: int = Query(default=8, ge=2, le=52),
+    recent_weeks: int = Query(default=2, ge=1, le=8),
+    min_z: float = Query(default=2.5, ge=0, description="alert threshold (modified z)"),
+    min_recent: int = Query(default=5, ge=1, description="min recent-window cases"),
+) -> dict:
+    """Emerging-trend alerts via robust weekly baselines + modified z-score."""
+    return detect_trends(
+        level=level,
+        subhead_id=subhead_id,
+        district_id=district_id,
+        baseline_weeks=baseline_weeks,
+        recent_weeks=recent_weeks,
+        min_z=min_z,
+        min_recent=min_recent,
+    )
+
+
+@router.get("/overview")
+def get_overview() -> dict:
+    """State intelligence summary: what requires attention now (issue #62).
+
+    Composes the dataset summary with the top emerging trends and the largest
+    spatial hotspots, plus an alert-severity tally for the headline.
+    """
+    m = data.meta()
+    trends = detect_trends(level="station")
+    hotspots = detect_hotspots(days=90)
+    sev_order = {"critical": 0, "serious": 1, "warning": 2}
+    tally = {"critical": 0, "serious": 0, "warning": 0}
+    for a in trends["alerts"]:
+        if a["severity"] in tally:
+            tally[a["severity"]] += 1
+    return {
+        "synthetic": True,
+        "total_cases": m["total_cases"],
+        "date_range": m["date_range"],
+        "map_center": m["map_center"],
+        "alert_tally": tally,
+        "top_trends": sorted(
+            trends["alerts"], key=lambda a: (sev_order.get(a["severity"], 9), -a["z_score"])
+        )[:5],
+        "top_hotspots": hotspots["hotspots"][:5],
+        "hotspot_count": hotspots["cluster_count"],
+    }

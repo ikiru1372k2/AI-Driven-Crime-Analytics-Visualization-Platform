@@ -17,11 +17,15 @@ import {
 import { MapView } from "./MapView";
 import { Sidebar } from "./Sidebar";
 import { HotspotDetail } from "./HotspotDetail";
+import { Overview } from "./Overview";
 import "./styles.css";
 
 const DEFAULT_FILTERS: Filters = { subheadId: null, days: null };
 
+type View = "overview" | "map";
+
 export function App() {
+  const [view, setView] = useState<View>("overview");
   const [meta, setMeta] = useState<Meta | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [cases, setCases] = useState<CaseRecord[]>([]);
@@ -75,6 +79,19 @@ export function App() {
         </span>
       </header>
 
+      <nav className="tabs">
+        <span className="tab-brand">KAVACH AI</span>
+        <button className={"tab" + (view === "overview" ? " active" : "")} onClick={() => setView("overview")}>
+          Overview
+        </button>
+        <button className={"tab" + (view === "map" ? " active" : "")} onClick={() => setView("map")}>
+          Hotspot Map
+        </button>
+      </nav>
+
+      {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
+
+      {view === "map" && (
       <div className="body">
         <Sidebar
           meta={meta}
@@ -106,6 +123,7 @@ export function App() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
