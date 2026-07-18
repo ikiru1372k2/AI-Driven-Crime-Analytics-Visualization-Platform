@@ -621,3 +621,104 @@ select:focus-visible {
 .open-map:hover {
   filter: brightness(1.1);
 }
+
+/* ---- alert pulse (map + sidebar) ---- */
+.pulse-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(208, 59, 59, 0.9);
+  box-shadow: 0 0 0 rgba(208, 59, 59, 0.7);
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(208, 59, 59, 0.65);
+  }
+  70% {
+    box-shadow: 0 0 0 22px rgba(208, 59, 59, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(208, 59, 59, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-marker {
+    animation: none;
+    box-shadow: 0 0 0 6px rgba(208, 59, 59, 0.35);
+  }
+}
+.legend .ring.pulsing {
+  border-color: var(--critical);
+  background: rgba(208, 59, 59, 0.35);
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+.pulse-tag {
+  margin-left: 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--critical);
+  letter-spacing: 0.04em;
+}
+
+/* ---- detail panel: badges + case list (drill leaf) ---- */
+.detail .badges {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0 0 0.8rem;
+}
+.detail .badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+}
+.detail .badge.ai {
+  color: var(--series-1);
+  border-color: rgba(57, 135, 229, 0.5);
+}
+.detail .badge.alert {
+  color: var(--critical);
+  border-color: rgba(208, 59, 59, 0.5);
+}
+.caselist {
+  margin-top: 0.9rem;
+}
+.case-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+}
+.case-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.7rem;
+  background: var(--surface-2);
+}
+.case-row .cn {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.case-row .cd {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.case-row .cg {
+  color: var(--ink-2);
+}
+.case-row .cg.heinous {
+  color: var(--accent-night);
+  font-weight: 600;
+}

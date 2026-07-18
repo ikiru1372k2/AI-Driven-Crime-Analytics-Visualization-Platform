@@ -18,6 +18,7 @@ interface Props {
   onFilters: (f: Filters) => void;
   caseCount: number;
   hotspots: Hotspot[];
+  alertStationIds: Set<string>;
   selectedRank: number | null;
   onSelectHotspot: (h: Hotspot | null) => void;
   loading: boolean;
@@ -29,6 +30,7 @@ export function Sidebar({
   onFilters,
   caseCount,
   hotspots,
+  alertStationIds,
   selectedRank,
   onSelectHotspot,
   loading,
@@ -44,6 +46,22 @@ export function Sidebar({
 
       {/* filters */}
       <div>
+        <p className="section-label">Scope · drill</p>
+        <div className="field">
+          <select
+            value={filters.districtId ?? ""}
+            onChange={(e) => onFilters({ ...filters, districtId: e.target.value || null })}
+            aria-label="District filter"
+          >
+            <option value="">Karnataka (all districts)</option>
+            {meta?.districts.map((d) => (
+              <option key={d.district_id} value={d.district_id}>
+                {d.district_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <p className="section-label">Crime type</p>
         <div className="field">
           <select
@@ -112,7 +130,12 @@ export function Sidebar({
             >
               <span className="rank">#{h.rank}</span>
               <span>
-                <div className="name">{h.station_name ?? h.top_crime ?? "Hotspot"}</div>
+                <div className="name">
+                  {h.station_name ?? h.top_crime ?? "Hotspot"}
+                  {h.station_id && alertStationIds.has(h.station_id) && (
+                    <span className="pulse-tag" title="Active trend alert here">● alert</span>
+                  )}
+                </div>
                 <div className="meta">
                   {h.top_crime} · {Math.round(h.radius_m)} m ·{" "}
                   {(h.night_share * 100).toFixed(0)}% night

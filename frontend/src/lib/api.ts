@@ -71,10 +71,12 @@ export interface Hotspot {
   top_crime: string | null;
   crime_breakdown: Record<string, number>;
   district_name: string | null;
+  station_id: string | null;
   station_name: string | null;
   hour_histogram: number[]; // 24 bins, index = hour of day
   night_share: number; // fraction of cases in the 21:00–02:00 window
   sample_case_ids: string[];
+  case_ids: string[]; // full cluster membership (for case drill-down)
 }
 
 export interface HotspotsResponse {
@@ -86,9 +88,10 @@ export interface HotspotsResponse {
   hotspots: Hotspot[];
 }
 
-/** Common filter state shared by the /cases and /hotspots queries. */
+/** Common filter state shared by the /cases, /hotspots and /trends queries. */
 export interface Filters {
   subheadId: string | null; // crime sub-head id, null = all
+  districtId: string | null; // district id, null = whole state
   days: number | null; // recency window, null = full range
 }
 
@@ -120,6 +123,7 @@ export function daysToDateFrom(days: number | null, latest: string | null): stri
 export const fetchCases = (f: Filters, latest: string | null) =>
   getJSON<CasesResponse>("/api/cases", {
     subhead_id: f.subheadId,
+    district_id: f.districtId,
     date_from: daysToDateFrom(f.days, latest),
     with_coords: true,
     limit: 5000,
@@ -128,6 +132,7 @@ export const fetchCases = (f: Filters, latest: string | null) =>
 export const fetchHotspots = (f: Filters, epsM = 400, minSamples = 8) =>
   getJSON<HotspotsResponse>("/api/hotspots", {
     subhead_id: f.subheadId,
+    district_id: f.districtId,
     days: f.days,
     eps_m: epsM,
     min_samples: minSamples,
@@ -176,7 +181,16 @@ export interface Overview {
   hotspot_count: number;
 }
 
-export const fetchTrends = (level: "station" | "subhead" = "station", minZ = 2.5) =>
-  getJSON<TrendsResponse>("/api/trends", { level, min_z: minZ });
+export const fetchTrends = (
+  f: Filters,
+  level: "station" | "subhead" = "station",
+  minZ = 2.5,
+) =>
+  getJSON<TrendsResponse>("/api/trends", {
+    level,
+    subhead_id: f.subheadId,
+    district_id: f.districtId,
+    min_z: minZ,
+  });
 
 export const fetchOverview = () => getJSON<Overview>("/api/overview");

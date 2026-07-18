@@ -35,14 +35,23 @@ interface Props {
   center: { lat: number; lon: number };
   cases: CaseRecord[];
   hotspots: Hotspot[];
+  alertStationIds: Set<string>;
   selectedRank: number | null;
   onSelectHotspot: (h: Hotspot | null) => void;
 }
 
-export function MapView({ center, cases, hotspots, selectedRank, onSelectHotspot }: Props) {
+export function MapView({
+  center,
+  cases,
+  hotspots,
+  alertStationIds,
+  selectedRank,
+  onSelectHotspot,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const readyRef = useRef(false);
+  const pulseMarkersRef = useRef<maplibregl.Marker[]>([]);
   const onSelectRef = useRef(onSelectHotspot);
   onSelectRef.current = onSelectHotspot;
 
@@ -199,6 +208,26 @@ export function MapView({ center, cases, hotspots, selectedRank, onSelectHotspot
     (map.getSource(HOT_PT_SRC) as maplibregl.GeoJSONSource)?.setData(featureCollection(centers));
   }
 
+  // Pulsing markers bind to ACTIVE trend alerts only — a hotspot pulses iff its
+  // station has an active alert. No alert -> no pulse (a pulse without an alert
+  // is prohibited, #61). Rendered as pointer-through HTML markers so clicks
+  // still reach the hotspot layer beneath.
+  function updatePulseMarkers() {
+    const map = mapRef.current;
+    if (!map) return;
+    for (const m of pulseMarkersRef.current) m.remove();
+    pulseMarkersRef.current = [];
+    for (const h of hotspots) {
+      if (!h.station_id || !alertStationIds.has(h.station_id)) continue;
+      const el = document.createElement("div");
+      el.className = "pulse-marker";
+      el.style.pointerEvents = "none";
+      pulseMarkersRef.current.push(
+        new maplibregl.Marker({ element: el }).setLngLat([h.center.lon, h.center.lat]).addTo(map),
+      );
+    }
+  }
+
   function fitToData() {
     const map = mapRef.current;
     if (!map) return;
@@ -214,6 +243,12 @@ export function MapView({ center, cases, hotspots, selectedRank, onSelectHotspot
     syncData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cases, hotspots, selectedRank]);
+
+  // (re)bind the alert pulse whenever hotspots or active alerts change
+  useEffect(() => {
+    updatePulseMarkers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hotspots, alertStationIds]);
 
   // refit the viewport when the underlying case set changes (filter change)
   useEffect(() => {
@@ -242,6 +277,10 @@ export function MapView({ center, cases, hotspots, selectedRank, onSelectHotspot
         <div className="row">
           <span className="ring" />
           Detected hotspot (true radius)
+        </div>
+        <div className="row">
+          <span className="ring pulsing" />
+          Active trend alert (pulsing)
         </div>
       </div>
     </div>
