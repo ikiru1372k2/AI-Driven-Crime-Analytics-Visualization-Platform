@@ -69,6 +69,21 @@ const SEED_EXAMPLES: Record<string, string> = {
  *  fragment surfaced on the Identities tab (coherent cross-feature demo). */
 const DEFAULT_SEED_CASE = SEED_EXAMPLES.CASE;
 
+/** Lenses — like a map's view switcher, each shows one relationship dimension
+ *  so the graph isn't all node types at once. CASE is the connective spine and
+ *  the seed node is always kept. `types: null` = show everything. */
+type LensKey = "full" | "people" | "places" | "charge";
+const LENSES: { key: LensKey; label: string; types: Set<string> | null }[] = [
+  { key: "full", label: "Full", types: null },
+  { key: "people", label: "People", types: new Set(["CASE", "ACCUSED_RECORD", "VICTIM_RECORD"]) },
+  { key: "places", label: "Places", types: new Set(["CASE", "POLICE_STATION", "DISTRICT"]) },
+  {
+    key: "charge",
+    label: "Charge",
+    types: new Set(["CASE", "CRIME_HEAD", "CRIME_SUBHEAD", "SECTION", "COURT"]),
+  },
+];
+
 export interface GraphSeed {
   type: NodeType;
   id: string;
@@ -91,6 +106,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [edgeDetail, setEdgeDetail] = useState<GraphEdge | null>(null);
   const [mode, setMode] = useState<"canvas" | "list">("canvas");
+  const [lens, setLens] = useState<LensKey>("full");
   const [seedType, setSeedType] = useState<NodeType>(seed?.type ?? "CASE");
   const [seedId, setSeedId] = useState<string>(seed?.id ?? "");
   const [loading, setLoading] = useState(false);
@@ -105,7 +121,9 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const sg = await fetchSubgraph(type, id, { depth: 2, limit: 60 });
+        // depth 1 = THIS record's own direct associations (not the general
+        // neighbourhood); expand a node to explore further
+        const sg = await fetchSubgraph(type, id, { depth: 1, limit: 40 });
         setSubgraph(sg);
         setMerged((prev) => {
           const nodes = merge ? new Map(prev.nodes) : new Map<string, GraphNode>();
@@ -151,15 +169,31 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   useEffect(() => {
     if (mode !== "canvas" || !containerRef.current) return;
     cyRef.current?.destroy();
+    // lens filter: keep only this dimension's node types (+ the seed), then drop
+    // edges whose endpoints aren't both visible
+    const active = LENSES.find((l) => l.key === lens)?.types ?? null;
+    const seedNodeId = `${seedType}:${seedId}`;
+    const nodes = [...merged.nodes.values()].filter(
+      (n) => !active || active.has(n.node_type) || n.node_id === seedNodeId,
+    );
+    const visibleIds = new Set(nodes.map((n) => n.node_id));
+    const edges = [...merged.edges.values()].filter(
+      (e) => visibleIds.has(e.source) && visibleIds.has(e.target),
+    );
     // node degree drives size + label priority so hubs read and leaves recede
     const degree = new Map<string, number>();
-    for (const e of merged.edges.values()) {
+    for (const e of edges) {
       degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
       degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
     }
     const maxDeg = Math.max(1, ...degree.values());
+    // in a lens, a node with no visible connection says nothing here — drop it
+    // (keep the seed) so the view is the relationships, not a field of dots
+    const shownNodes = nodes.filter(
+      (n) => (degree.get(n.node_id) ?? 0) > 0 || n.node_id === seedNodeId,
+    );
     const elements = [
-      ...[...merged.nodes.values()].map((n) => ({
+      ...shownNodes.map((n) => ({
         data: {
           id: n.node_id,
           label: n.label,
@@ -169,7 +203,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           degNorm: (degree.get(n.node_id) ?? 0) / maxDeg,
         },
       })),
-      ...[...merged.edges.values()].map((e) => ({
+      ...edges.map((e) => ({
         data: {
           id: e.edge_id,
           source: e.source,
@@ -286,7 +320,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [merged, mode, openNode, theme]);
+  }, [merged, mode, openNode, theme, lens, seedType, seedId]);
 
   const stubs = subgraph?.stubs;
   const nodeList = [...merged.nodes.values()].sort((a, b) =>
@@ -402,6 +436,20 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       </div>
 
       <div className="graph-stage">
+        {mode === "canvas" && (
+          <div className="graph-lens-overlay" role="group" aria-label="Graph view lens">
+            {LENSES.map((l) => (
+              <button
+                key={l.key}
+                className={"lens-chip" + (lens === l.key ? " active" : "")}
+                onClick={() => setLens(l.key)}
+                title={l.types ? `Show: ${[...l.types].join(", ")}` : "Show all node types"}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+        )}
         {mode === "canvas" ? (
           <div ref={containerRef} className="graph-canvas" aria-label="Association graph canvas" />
         ) : (
