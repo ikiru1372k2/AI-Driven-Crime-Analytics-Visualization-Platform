@@ -1,8 +1,10 @@
 """FastAPI application entry point (Catalyst AppSail target, ADR-010)."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from kavach import __version__
+from kavach.api.routes import router as analytics_router
 
 app = FastAPI(
     title="KAVACH AI Analytics API",
@@ -13,6 +15,18 @@ app = FastAPI(
         "(docs/schema/derived-intelligence-schema.md)."
     ),
 )
+
+# Local dev: the Vite frontend runs on a separate origin. Vite falls through to
+# the next free port (5173, 5174, …) when one is taken, so allow any localhost
+# port for the dev path. (The Catalyst deployment serves same-origin — CAT-*.)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(analytics_router)
 
 
 @app.get("/health")

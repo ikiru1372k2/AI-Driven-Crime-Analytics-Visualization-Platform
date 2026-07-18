@@ -1,16 +1,111 @@
 /**
- * KAVACH AI app shell placeholder (GOV-001).
- * The real shell — routing, Catalyst Auth, classification badge system,
- * SYNTHETIC DATA banner — is delivered by UI-001.
+ * KAVACH AI — interactive crime hotspot console (Phase 3).
+ * Loads dataset meta, then drives the /cases and /hotspots endpoints from a
+ * shared filter (crime type + recency). All data is SYNTHETIC (ADR-011) — the
+ * persistent banner makes that explicit.
  */
+import { useCallback, useEffect, useState } from "react";
+import {
+  fetchCases,
+  fetchHotspots,
+  fetchMeta,
+  type CaseRecord,
+  type Filters,
+  type Hotspot,
+  type Meta,
+} from "../lib/api";
+import { MapView } from "./MapView";
+import { Sidebar } from "./Sidebar";
+import { HotspotDetail } from "./HotspotDetail";
+import "./styles.css";
+
+const DEFAULT_FILTERS: Filters = { subheadId: null, days: null };
+
 export function App() {
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [cases, setCases] = useState<CaseRecord[]>([]);
+  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
+  const [selectedRank, setSelectedRank] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // load dataset meta once (also gives the latest date for recency windows)
+  useEffect(() => {
+    fetchMeta().then(setMeta).catch((e) => setError(String(e)));
+  }, []);
+
+  // (re)query cases + hotspots whenever filters change
+  useEffect(() => {
+    if (!meta) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const latest = meta.date_range.to;
+    Promise.all([fetchCases(filters, latest), fetchHotspots(filters)])
+      .then(([c, h]) => {
+        if (cancelled) return;
+        setCases(c.cases);
+        setHotspots(h.hotspots);
+        setSelectedRank(null);
+      })
+      .catch((e) => !cancelled && setError(String(e)))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [meta, filters]);
+
+  const onSelectHotspot = useCallback((h: Hotspot | null) => {
+    setSelectedRank(h ? h.rank : null);
+  }, []);
+
+  const selected = hotspots.find((h) => h.rank === selectedRank) ?? null;
+  const center = meta?.map_center ?? { lat: 12.97, lon: 77.59 };
+
   return (
-    <main style={{ fontFamily: "system-ui", padding: "4rem", textAlign: "center" }}>
-      <h1>KAVACH AI</h1>
-      <p>Karnataka Crime Intelligence &amp; Analytical Platform</p>
-      <p style={{ color: "#888" }}>
-        From Fragmented FIR Records to Connected, Explainable and Proactive Crime Intelligence.
-      </p>
-    </main>
+    <div className="app">
+      <header className="banner">
+        <span className="dot" />
+        Synthetic demo data — not real FIRs
+        <span className="sub">
+          {meta
+            ? `${meta.total_cases.toLocaleString()} cases · ${meta.date_range.from} → ${meta.date_range.to}`
+            : "loading dataset…"}
+        </span>
+      </header>
+
+      <div className="body">
+        <Sidebar
+          meta={meta}
+          filters={filters}
+          onFilters={setFilters}
+          caseCount={cases.length}
+          hotspots={hotspots}
+          selectedRank={selectedRank}
+          onSelectHotspot={onSelectHotspot}
+          loading={loading}
+        />
+
+        <div className="map-col">
+          {meta ? (
+            <MapView
+              center={center}
+              cases={cases}
+              hotspots={hotspots}
+              selectedRank={selectedRank}
+              onSelectHotspot={onSelectHotspot}
+            />
+          ) : (
+            <div className="map-loading">
+              {error ? `Backend unreachable — ${error}` : "Connecting to analytics API…"}
+            </div>
+          )}
+          {selected && (
+            <HotspotDetail hotspot={selected} onClose={() => setSelectedRank(null)} />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
