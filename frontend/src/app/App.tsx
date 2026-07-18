@@ -22,12 +22,20 @@ import { MapView } from "./MapView";
 import { Sidebar } from "./Sidebar";
 import { HotspotDetail } from "./HotspotDetail";
 import { Overview } from "./Overview";
+import { GraphView, type GraphSeed } from "./GraphView";
+import type { NodeType } from "../lib/graphApi";
 import { readHashState, writeHashState } from "../lib/urlstate";
 import "./styles.css";
 
 const DEFAULT_FILTERS: Filters = { subheadId: null, districtId: null, days: null };
 
-type View = "overview" | "map";
+type View = "overview" | "map" | "graph";
+
+function parseSeed(raw: string | null): GraphSeed | null {
+  if (!raw) return null;
+  const [type, ...rest] = raw.split(":");
+  return rest.length ? { type: type as NodeType, id: rest.join(":") } : null;
+}
 
 export function App() {
   const initial = readHashState();
@@ -39,6 +47,7 @@ export function App() {
   const [alerts, setAlerts] = useState<TrendAlert[]>([]);
   const [districtStats, setDistrictStats] = useState<DistrictStat[]>([]);
   const [selectedRank, setSelectedRank] = useState<number | null>(initial.hotspot);
+  const [graphSeed, setGraphSeed] = useState<GraphSeed | null>(parseSeed(initial.graphSeed));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,8 +80,13 @@ export function App() {
 
   // keep the URL hash in sync so any view is shareable / reloadable
   useEffect(() => {
-    writeHashState({ view, filters, hotspot: selectedRank });
-  }, [view, filters, selectedRank]);
+    writeHashState({
+      view,
+      filters,
+      hotspot: selectedRank,
+      graphSeed: graphSeed ? `${graphSeed.type}:${graphSeed.id}` : null,
+    });
+  }, [view, filters, selectedRank, graphSeed]);
 
   // changing a filter invalidates the current hotspot selection
   const onFilters = useCallback((f: Filters) => {
@@ -112,9 +126,14 @@ export function App() {
         <button className={"tab" + (view === "map" ? " active" : "")} onClick={() => setView("map")}>
           Hotspot Map
         </button>
+        <button className={"tab" + (view === "graph" ? " active" : "")} onClick={() => setView("graph")}>
+          Association Graph
+        </button>
       </nav>
 
       {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
+
+      {view === "graph" && <GraphView seed={graphSeed} onSeed={setGraphSeed} />}
 
       {view === "map" && (
       <div className="body">

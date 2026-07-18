@@ -80,6 +80,20 @@ def test_depth2_subgraph_returns_co_accused_clique(client, ground_truth):
     assert all(e["evidence_case_id"] == case_id for e in shares)
 
 
+def test_depth1_includes_induced_edges_between_leaves(client, ground_truth):
+    """Regression: SHARES_CASE_WITH pairs between two depth-1 accused must
+    appear even though neither leaf is expanded (induced edge set)."""
+    case_id, accused, _ = ground_truth
+    r = client.get(
+        "/api/v1/graph/subgraph",
+        params={"seed_type": "CASE", "seed_id": case_id, "depth": 1, "limit": 500},
+    )
+    body = r.json()
+    shares = [e for e in body["edges"] if e["relationship_type"] == "SHARES_CASE_WITH"]
+    n = len(accused)
+    assert len(shares) == n * (n - 1) // 2  # complete co-accused pair set
+
+
 def test_every_edge_carries_full_provenance_fields(client, ground_truth):
     _, accused, _ = ground_truth
     r = client.get(

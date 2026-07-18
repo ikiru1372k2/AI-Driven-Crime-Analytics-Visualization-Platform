@@ -189,11 +189,15 @@ def test_provenance_run_and_limitation_string(bridge_world):
 
 def test_prohibited_vocabulary_absent():
     """Interpretation constraint lint: no criminological role claims in any
-    graph/API copy string (issue #44 PROHIBITED list)."""
+    graph/API/UI copy string (issue #44 PROHIBITED list; #63 UI copy AC)."""
     prohibited = re.compile(r"gang\s*leader|mastermind|kingpin", re.IGNORECASE)
     graph_dir = Path(metrics_mod.__file__).parent
     api_dir = graph_dir.parent / "api"
-    for path in sorted([*graph_dir.glob("*.py"), *api_dir.glob("*.py")]):
+    frontend_src = graph_dir.parents[3] / "frontend" / "src"
+    files = [*graph_dir.glob("*.py"), *api_dir.glob("*.py")]
+    files += [*frontend_src.rglob("*.ts"), *frontend_src.rglob("*.tsx")]
+    assert files
+    for path in sorted(files):
         assert not prohibited.search(path.read_text()), path
 
 

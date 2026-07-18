@@ -725,3 +725,201 @@ select:focus-visible {
   color: var(--accent-night);
   font-weight: 600;
 }
+
+/* ============================================================
+   Association graph (UI-005/#63) — provenance-first styling
+   ============================================================ */
+.graph-body {
+  height: calc(100vh - 96px);
+}
+.graph-rail {
+  gap: 0.9rem;
+}
+.graph-seed {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+.graph-seed select,
+.graph-seed input {
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.85rem;
+}
+.graph-seed button {
+  background: var(--series-1);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.45rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.graph-seed button:disabled {
+  opacity: 0.5;
+}
+.graph-modes {
+  display: flex;
+  gap: 0.4rem;
+}
+.graph-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.legend-swatch {
+  display: inline-block;
+  width: 26px;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+.graph-stubs .stub-row {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0.25rem 0;
+}
+.linklike {
+  background: none;
+  border: 0;
+  color: var(--series-1);
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+  text-decoration: underline;
+}
+.graph-stage {
+  position: relative;
+  min-height: 0;
+}
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  background: var(--page);
+}
+.graph-nodelist {
+  list-style: none;
+  margin: 0;
+  padding: 0.75rem;
+  overflow-y: auto;
+  height: 100%;
+}
+.node-row {
+  width: 100%;
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--ink);
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.35rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.node-row:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 1px;
+}
+.node-row.active {
+  border-color: var(--series-1);
+}
+.node-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+}
+.node-type {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  margin-right: 0.35rem;
+}
+.graph-panel {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  width: 300px;
+  max-height: calc(100% - 1.8rem);
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 0.9rem;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+.graph-panel header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.graph-panel header .close {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.graph-panel .badge {
+  display: inline-block;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  margin: 0 0 0.6rem;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+}
+.metric-grid dt {
+  color: var(--muted);
+}
+.metric-grid dd {
+  margin: 0;
+}
+.interpretation {
+  font-size: 0.82rem;
+  color: var(--warning);
+  border-left: 3px solid var(--warning);
+  padding-left: 0.55rem;
+  margin: 0.4rem 0 0.7rem;
+}
+.case-list {
+  list-style: none;
+  margin: 0 0 0.7rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+.expand {
+  width: 100%;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.45rem;
+  cursor: pointer;
+  margin-bottom: 0.5rem;
+}
+.small {
+  font-size: 0.72rem;
+}
