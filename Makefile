@@ -1,4 +1,7 @@
-.PHONY: lint test build backend-dev frontend-dev
+.PHONY: lint test build backend-dev frontend-dev deploy-backend
+
+deploy-backend:
+	bash scripts/catalyst/deploy_backend.sh
 
 lint:
 	cd backend && ruff check .
