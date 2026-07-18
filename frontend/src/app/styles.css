@@ -1,7 +1,9 @@
 /*
- * KAVACH AI console — dark intelligence-desk theme.
- * Colors follow the validated data-viz palette (dark surface steps). This is a
- * demo shell over SYNTHETIC data; the persistent banner makes that unmissable.
+ * KAVACH AI console — theming.
+ * Colors follow the validated data-viz palette. Both light and dark are
+ * *selected* (each stepped for its own surface), not an auto-flip. Dark is the
+ * default; [data-theme="light"] on <html> switches the whole app — surfaces,
+ * ink, overlays, chart accents, the map basemap and the association graph.
  */
 
 :root {
@@ -16,6 +18,8 @@
   --hairline: rgba(255, 255, 255, 0.1);
   --grid: #2c2c2a;
   --baseline: #383835;
+  --overlay: rgba(26, 26, 25, 0.94); /* floating panels/popups over the map */
+  --accent-soft: #9ec5f4; /* soft-blue text/borders on chips + tags */
   /* accents */
   --series-1: #3987e5; /* blue — cases / primary */
   --accent-night: #d95926; /* orange — night-window emphasis */
@@ -26,6 +30,26 @@
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--ink);
   background: var(--page);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f4f4f1;
+  --surface-1: #ffffff;
+  --surface-2: #f0efec;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #6f6e69;
+  --hairline: rgba(11, 11, 11, 0.14);
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --overlay: rgba(255, 255, 255, 0.95);
+  --accent-soft: #1c5cab;
+  --series-1: #2a78d6;
+  --accent-night: #c5521f;
+  --critical: #c0322f;
+  --warning: #b8790a;
+  --good: #0a8a0a;
 }
 
 * {
@@ -314,7 +338,7 @@ select:focus-visible {
   position: absolute;
   left: 12px;
   bottom: 12px;
-  background: rgba(26, 26, 25, 0.92);
+  background: var(--overlay);
   border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 0.6rem 0.75rem;
@@ -378,7 +402,7 @@ select:focus-visible {
   width: 320px;
   max-height: calc(100% - 24px);
   overflow-y: auto;
-  background: rgba(26, 26, 25, 0.96);
+  background: var(--overlay);
   border: 1px solid var(--hairline);
   border-radius: 10px;
   padding: 0.9rem 1rem 1.1rem;
@@ -1051,7 +1075,7 @@ select:focus-visible {
   font-size: 0.7rem;
   background: rgba(57, 135, 229, 0.15);
   border: 1px solid rgba(57, 135, 229, 0.4);
-  color: #9ec5f4;
+  color: var(--accent-soft);
   border-radius: 999px;
   padding: 0.15rem 0.55rem;
 }
@@ -1109,7 +1133,7 @@ select:focus-visible {
   border: 1px solid var(--hairline);
 }
 .tag.ok {
-  color: #9ec5f4;
+  color: var(--accent-soft);
   border-color: rgba(57, 135, 229, 0.35);
 }
 .tag.bad {
@@ -1148,4 +1172,21 @@ select:focus-visible {
   font-size: 0.7rem;
   color: var(--muted);
   margin-left: auto;
+}
+
+/* ---- theme toggle ---- */
+.theme-toggle {
+  margin-left: auto;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: var(--series-1);
 }

@@ -22,23 +22,27 @@ function velocityColor(v: number | null): string {
   return "#6da7ec";
 }
 
-// Free, token-less dark basemap (CARTO). Attribution required.
-const STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    carto: {
-      type: "raster",
-      tiles: [
-        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-        "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-      ],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors © CARTO",
+// Free, token-less CARTO basemaps (no API key). Attribution required. The
+// basemap follows the app theme — light in light mode, dark in dark mode.
+function basemapTiles(theme: "dark" | "light"): string[] {
+  const set = theme === "light" ? "light_all" : "dark_all";
+  return ["a", "b", "c"].map((s) => `https://${s}.basemaps.cartocdn.com/${set}/{z}/{x}/{y}@2x.png`);
+}
+
+function mapStyle(theme: "dark" | "light"): maplibregl.StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      carto: {
+        type: "raster",
+        tiles: basemapTiles(theme),
+        tileSize: 256,
+        attribution: "© OpenStreetMap contributors © CARTO",
+      },
     },
-  },
-  layers: [{ id: "carto", type: "raster", source: "carto" }],
-};
+    layers: [{ id: "carto", type: "raster", source: "carto" }],
+  };
+}
 
 interface Props {
   center: { lat: number; lon: number };
@@ -50,6 +54,7 @@ interface Props {
   alertStationIds: Set<string>;
   selectedRank: number | null;
   onSelectHotspot: (h: Hotspot | null) => void;
+  theme: "dark" | "light";
 }
 
 export function MapView({
@@ -62,6 +67,7 @@ export function MapView({
   alertStationIds,
   selectedRank,
   onSelectHotspot,
+  theme,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -78,7 +84,7 @@ export function MapView({
     if (!containerRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: STYLE,
+      style: mapStyle(theme),
       center: [center.lon, center.lat],
       zoom: 9,
       attributionControl: { compact: true },
@@ -351,6 +357,12 @@ export function MapView({
     updateDistricts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [districtStats, activeDistrictId]);
+
+  // swap the basemap tiles when the app theme changes (light <-> dark)
+  useEffect(() => {
+    const src = mapRef.current?.getSource("carto") as maplibregl.RasterTileSource | undefined;
+    src?.setTiles(basemapTiles(theme));
+  }, [theme]);
 
   // refit the viewport when the underlying case set changes (filter change)
   useEffect(() => {

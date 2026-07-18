@@ -17,7 +17,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchClassifications,
   fetchNodeDetail,
-  fetchSeedCaseId,
   fetchSubgraph,
   type ClassificationInfo,
   type GraphEdge,
@@ -56,6 +55,10 @@ const EDGE_STYLE: Record<string, { color: string; style: string; width: number }
 
 const SEED_TYPES: NodeType[] = ["CASE", "ACCUSED_RECORD", "POLICE_STATION", "DISTRICT"];
 
+/** Default sample seed — case 7231, whose accused is the "Ravi Kumar" identity
+ *  fragment surfaced on the Identities tab (coherent cross-feature demo). */
+const DEFAULT_SEED_CASE = "7231";
+
 export interface GraphSeed {
   type: NodeType;
   id: string;
@@ -64,9 +67,10 @@ export interface GraphSeed {
 interface Props {
   seed: GraphSeed | null;
   onSeed: (s: GraphSeed) => void;
+  theme: "dark" | "light";
 }
 
-export function GraphView({ seed, onSeed }: Props) {
+export function GraphView({ seed, onSeed, theme }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const [subgraph, setSubgraph] = useState<Subgraph | null>(null);
@@ -113,18 +117,15 @@ export function GraphView({ seed, onSeed }: Props) {
     [],
   );
 
-  // seed from URL/props, else bootstrap from the first mapped case
+  // seed from URL/props, else bootstrap from the sample case (its accused is
+  // "Ravi Kumar" — the same fragmented identity shown on the Identities tab)
   useEffect(() => {
     if (seed) {
       setSeedType(seed.type);
       setSeedId(seed.id);
       void load(seed.type, seed.id);
     } else {
-      fetchSeedCaseId()
-        .then((id) => {
-          if (id) onSeed({ type: "CASE", id });
-        })
-        .catch((e) => setError(String(e)));
+      onSeed({ type: "CASE", id: DEFAULT_SEED_CASE });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed?.type, seed?.id]);
@@ -165,7 +166,7 @@ export function GraphView({ seed, onSeed }: Props) {
           style: {
             label: "data(label)",
             "font-size": 9,
-            color: "#dce3ea",
+            color: theme === "light" ? "#0b0b0b" : "#dce3ea",
             "text-wrap": "ellipsis",
             "text-max-width": "110px",
             "text-valign": "bottom",
@@ -175,12 +176,12 @@ export function GraphView({ seed, onSeed }: Props) {
             "background-color": (el: cytoscape.NodeSingular) =>
               NODE_COLORS[el.data("type") as string] ?? "#888",
             "border-width": 1,
-            "border-color": "#1c232b",
+            "border-color": theme === "light" ? "#ffffff" : "#1c232b",
           },
         },
         {
           selector: "node:selected",
-          style: { "border-width": 3, "border-color": "#e8eef4" },
+          style: { "border-width": 3, "border-color": theme === "light" ? "#0b0b0b" : "#e8eef4" },
         },
         {
           selector: "edge",
@@ -215,7 +216,7 @@ export function GraphView({ seed, onSeed }: Props) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [merged, mode, openNode]);
+  }, [merged, mode, openNode, theme]);
 
   const stubs = subgraph?.stubs;
   const nodeList = [...merged.nodes.values()].sort((a, b) =>
@@ -252,7 +253,7 @@ export function GraphView({ seed, onSeed }: Props) {
           <input
             value={seedId}
             aria-label="Seed record id"
-            placeholder="record id, e.g. 5001"
+            placeholder="record id, e.g. 7231"
             onChange={(e) => setSeedId(e.target.value)}
           />
           <button type="submit" disabled={loading}>
