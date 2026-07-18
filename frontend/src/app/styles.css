@@ -337,6 +337,9 @@ select:focus-visible {
   border-radius: 50%;
   flex: none;
 }
+.legend .swatch.sq {
+  border-radius: 3px;
+}
 .legend .ring {
   width: 14px;
   height: 14px;

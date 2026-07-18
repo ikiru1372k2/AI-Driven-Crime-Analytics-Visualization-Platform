@@ -7,10 +7,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchCases,
+  fetchDistricts,
   fetchHotspots,
   fetchMeta,
   fetchTrends,
   type CaseRecord,
+  type DistrictStat,
   type Filters,
   type Hotspot,
   type Meta,
@@ -35,13 +37,15 @@ export function App() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [alerts, setAlerts] = useState<TrendAlert[]>([]);
+  const [districtStats, setDistrictStats] = useState<DistrictStat[]>([]);
   const [selectedRank, setSelectedRank] = useState<number | null>(initial.hotspot);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // load dataset meta once (also gives the latest date for recency windows)
+  // load dataset meta + district velocity once (static for a demo run)
   useEffect(() => {
     fetchMeta().then(setMeta).catch((e) => setError(String(e)));
+    fetchDistricts().then((d) => setDistrictStats(d.districts)).catch(() => {});
   }, []);
 
   // (re)query cases + hotspots + active alerts whenever filters change
@@ -132,6 +136,9 @@ export function App() {
               center={center}
               cases={cases}
               hotspots={hotspots}
+              districtStats={districtStats}
+              activeDistrictId={filters.districtId}
+              onDrillDistrict={(id) => onFilters({ ...filters, districtId: id })}
               alertStationIds={alertStationIds}
               selectedRank={selectedRank}
               onSelectHotspot={onSelectHotspot}

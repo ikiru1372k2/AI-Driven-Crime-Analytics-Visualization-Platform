@@ -84,6 +84,16 @@ def get_trends(
     )
 
 
+@router.get("/districts")
+def get_districts(window_days: int = Query(default=30, ge=7, le=180)) -> dict:
+    """Per-district totals + recent-vs-prior case velocity (choropleth source)."""
+    return {
+        "synthetic": True,
+        "window_days": window_days,
+        "districts": data.district_stats(window_days),
+    }
+
+
 @router.get("/overview")
 def get_overview() -> dict:
     """State intelligence summary: what requires attention now (issue #62).
