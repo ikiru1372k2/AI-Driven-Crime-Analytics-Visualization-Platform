@@ -157,6 +157,11 @@ class MetricsRepository:
             "SELECT * FROM CrimeGraphNodeMetric ORDER BY node_id"
         ).fetchall()
 
+    def node_metric(self, node_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM CrimeGraphNodeMetric WHERE node_id = ?", (node_id,)
+        ).fetchone()
+
     def pair_metrics(self) -> list[sqlite3.Row]:
         return self._conn.execute(
             "SELECT * FROM CrimeGraphPairMetric ORDER BY node_a, node_b"
