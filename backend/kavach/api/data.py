@@ -134,6 +134,38 @@ def case_records(
     return out.where(out.notna(), None).to_dict(orient="records")
 
 
+def district_stats(window_days: int = 30) -> list[dict]:
+    """Per-district case totals and a recent-vs-prior velocity ratio.
+
+    Velocity = cases in the last ``window_days`` divided by cases in the
+    ``window_days`` before that (>1 means activity is rising). Powers the
+    district choropleth (case velocity) on the map.
+    """
+    df = enriched_cases()
+    df = df[df["registered_date"].notna()]
+    latest = df["registered_date"].max()
+    recent_cut = latest - pd.Timedelta(days=window_days)
+    prior_cut = latest - pd.Timedelta(days=2 * window_days)
+
+    out = []
+    for (did, dname), c in df.groupby(["district_id", "district_name"]):
+        recent = int((c["registered_date"] > recent_cut).sum())
+        prior = int((c["registered_date"] > prior_cut).sum()) - recent
+        velocity = round(recent / prior, 2) if prior > 0 else None
+        with_coords = c[c["latitude"].notna() & c["longitude"].notna()]
+        out.append({
+            "district_id": did,
+            "district_name": dname,
+            "case_count": int(len(c)),
+            "cases_with_coords": int(len(with_coords)),
+            "recent_count": recent,
+            "prior_count": prior,
+            "velocity": velocity,
+        })
+    out.sort(key=lambda d: d["case_count"], reverse=True)
+    return out
+
+
 def meta() -> dict:
     """Lookup values + dataset summary for filters, map centering, and banners."""
     df = enriched_cases()
