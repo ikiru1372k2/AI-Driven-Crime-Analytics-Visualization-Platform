@@ -9,16 +9,34 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from kavach.analytics.hotspot import detect_hotspots
+from kavach.analytics.hotspot import engine as hotspot_engine
 from kavach.analytics.trends import detect_trends
+from kavach.analytics.trends import engine as trends_engine
 from kavach.api import data
+from kavach.api.envelope import ClassificationInfo, classification_legend, envelope
+from kavach.provenance import DataClassification
 
 router = APIRouter(prefix="/api", tags=["analytics"])
+
+#: Envelope for responses that restate source columns without computation.
+_FACT_ENVELOPE = dict(
+    classification=DataClassification.FACT,
+    method_name="source_restatement",
+    method_version="1.0.0",
+)
+
+
+@router.get("/classifications", response_model=list[ClassificationInfo])
+def get_classifications() -> list[ClassificationInfo]:
+    """The six-class data classification legend (machine enum + centralized
+    human strings). UI badges map 1:1 to these entries (PROV-002/UI-001)."""
+    return classification_legend()
 
 
 @router.get("/meta")
 def get_meta() -> dict:
     """Lookups + dataset summary for filters, map centering and the demo banner."""
-    return data.meta()
+    return {**data.meta(), "intelligence": envelope(**_FACT_ENVELOPE)}
 
 
 @router.get("/cases")
@@ -41,7 +59,12 @@ def get_cases(
         with_coords=with_coords,
         limit=limit,
     )
-    return {"synthetic": True, "count": len(rows), "cases": rows}
+    return {
+        "synthetic": True,
+        "count": len(rows),
+        "cases": rows,
+        "intelligence": envelope(**_FACT_ENVELOPE),
+    }
 
 
 @router.get("/hotspots")
@@ -53,13 +76,20 @@ def get_hotspots(
     min_samples: int = Query(default=8, ge=2, le=100),
 ) -> dict:
     """Spatial crime hotspots via DBSCAN (haversine), ranked by case count."""
-    return detect_hotspots(
+    result = detect_hotspots(
         subhead_id=subhead_id,
         district_id=district_id,
         days=days,
         eps_m=eps_m,
         min_samples=min_samples,
     )
+    result["intelligence"] = envelope(
+        classification=DataClassification.STATISTICAL_INFERENCE,
+        method_name=hotspot_engine.METHOD_NAME,
+        method_version=hotspot_engine.METHOD_VERSION,
+        limitations=("synthetic data (ADR-011)",),
+    )
+    return result
 
 
 @router.get("/trends")
@@ -73,7 +103,7 @@ def get_trends(
     min_recent: int = Query(default=5, ge=1, description="min recent-window cases"),
 ) -> dict:
     """Emerging-trend alerts via robust weekly baselines + modified z-score."""
-    return detect_trends(
+    result = detect_trends(
         level=level,
         subhead_id=subhead_id,
         district_id=district_id,
@@ -82,6 +112,13 @@ def get_trends(
         min_z=min_z,
         min_recent=min_recent,
     )
+    result["intelligence"] = envelope(
+        classification=DataClassification.STATISTICAL_INFERENCE,
+        method_name=trends_engine.METHOD_NAME,
+        method_version=trends_engine.METHOD_VERSION,
+        limitations=("synthetic data (ADR-011)",),
+    )
+    return result
 
 
 @router.get("/districts")
@@ -91,6 +128,11 @@ def get_districts(window_days: int = Query(default=30, ge=7, le=180)) -> dict:
         "synthetic": True,
         "window_days": window_days,
         "districts": data.district_stats(window_days),
+        "intelligence": envelope(
+            classification=DataClassification.DERIVED_METRIC,
+            method_name="district_window_aggregation",
+            method_version="1.0.0",
+        ),
     }
 
 
@@ -120,4 +162,13 @@ def get_overview() -> dict:
         )[:5],
         "top_hotspots": hotspots["hotspots"][:5],
         "hotspot_count": hotspots["cluster_count"],
+        "intelligence": envelope(
+            classification=DataClassification.DERIVED_METRIC,
+            method_name="overview_composition",
+            method_version="1.0.0",
+            limitations=(
+                "composite view — trend/hotspot entries are STATISTICAL_INFERENCE "
+                "from their own engines",
+            ),
+        ),
     }

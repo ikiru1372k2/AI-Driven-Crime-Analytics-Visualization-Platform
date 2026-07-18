@@ -1,5 +1,7 @@
 """FastAPI application entry point (Catalyst AppSail target, ADR-010)."""
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,10 +20,16 @@ app = FastAPI(
 
 # Local dev: the Vite frontend runs on a separate origin. Vite falls through to
 # the next free port (5173, 5174, …) when one is taken, so allow any localhost
-# port for the dev path. (The Catalyst deployment serves same-origin — CAT-*.)
+# port for the dev path. Hosted (CAT-006): the Web Client origin is allowed via
+# KAVACH_ALLOWED_ORIGINS (comma-separated env, set on AppSail — never in repo).
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origins=[
+        o.strip()
+        for o in os.environ.get("KAVACH_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -44,3 +52,32 @@ def health_deps() -> dict:
         except ImportError:
             deps[mod] = None
     return {"status": "ok", "dependencies": deps}
+
+
+@app.get("/health/datastore")
+def health_datastore() -> dict:
+    """Sample scoped Data Store query from the deployed runtime (CAT-005).
+
+    Local/dev (no Catalyst env): reports "unconfigured" honestly — there is
+    no fake integration. On AppSail with project env + SDK present it runs
+    one scoped ZCQL row count against CaseMaster.
+    """
+    from kavach.config import settings
+
+    if not settings.catalyst_project_id:
+        return {
+            "status": "unconfigured",
+            "detail": "CATALYST_PROJECT_ID not set — local mode (dev fixture)",
+        }
+    try:
+        import zcatalyst_sdk  # type: ignore[import-not-found]
+    except ImportError:
+        return {"status": "error", "detail": "zcatalyst-sdk not installed in runtime"}
+    try:
+        catalyst_app = zcatalyst_sdk.initialize()
+        rows = catalyst_app.zcql().execute_query(
+            "SELECT COUNT(ROWID) FROM CaseMaster"
+        )
+        return {"status": "ok", "sample_query": "COUNT(CaseMaster)", "result": rows}
+    except Exception as exc:  # pragma: no cover - live-environment path
+        return {"status": "error", "detail": f"{type(exc).__name__}: {exc}"}
