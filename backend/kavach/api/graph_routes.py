@@ -88,9 +88,7 @@ def get_subgraph(
         raise HTTPException(status_code=404, detail=f"unknown node {seed}")
 
     included: dict[str, int] = {seed: 0}
-    edges: dict[str, CrimeGraphEdge] = {}
     truncated: dict[str, int] = {}
-    cross_scope: dict[str, int] = {}
     frontier = deque([seed])
     while frontier:
         current = frontier.popleft()
@@ -99,16 +97,29 @@ def get_subgraph(
             continue
         for e in sorted(ctx.adjacency.get(current, []), key=lambda x: x.edge_id):
             if not _in_scope(ctx, e, scope_district_id):
-                cross_scope[current] = cross_scope.get(current, 0) + 1
-                continue
+                continue  # counted below over the final node set
             other = e.target_node_id if e.source_node_id == current else e.source_node_id
-            if other not in included and len(included) >= limit:
+            if other in included:
+                continue
+            if len(included) >= limit:
                 truncated[current] = truncated.get(current, 0) + 1
                 continue
-            edges[e.edge_id] = e
-            if other not in included:
-                included[other] = d + 1
-                frontier.append(other)
+            included[other] = d + 1
+            frontier.append(other)
+
+    # induced edge set: every in-scope edge between included nodes (a
+    # frontier-only sweep would miss e.g. co-accused pairs both at depth 1);
+    # out-of-scope incident edges become per-node stub counts, never detail
+    edges: dict[str, CrimeGraphEdge] = {}
+    cross_scope: dict[str, int] = {}
+    for nid in included:
+        for e in ctx.adjacency.get(nid, []):
+            if not _in_scope(ctx, e, scope_district_id):
+                cross_scope[nid] = cross_scope.get(nid, 0) + 1
+                continue
+            other = e.target_node_id if e.source_node_id == nid else e.source_node_id
+            if other in included:
+                edges[e.edge_id] = e
 
     return {
         "synthetic": True,
