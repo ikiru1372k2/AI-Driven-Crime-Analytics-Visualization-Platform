@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { fetchIdentities, type IdentitiesResponse, type IdentityCandidate } from "../lib/api";
+import { fetchDecisions, postDecision } from "../lib/evidenceApi";
 
 type Decision = "accepted" | "rejected";
 
@@ -18,6 +19,19 @@ export function IdentityReview() {
 
   useEffect(() => {
     fetchIdentities().then(setData).catch((e) => setError(String(e)));
+    // loop closure (design review P0): accept/reject survives reload,
+    // each action lands in the append-only audit trail (PROV-003)
+    fetchDecisions()
+      .then((d) => {
+        const restored: Record<string, Decision> = {};
+        for (const x of d.decisions) {
+          if (x.kind !== "IDENTITY") continue;
+          if (x.decision === "CONFIRMED") restored[x.target_ref] = "accepted";
+          if (x.decision === "REJECTED") restored[x.target_ref] = "rejected";
+        }
+        setDecisions((prev) => ({ ...restored, ...prev }));
+      })
+      .catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {
@@ -32,8 +46,15 @@ export function IdentityReview() {
   if (error) return <div className="idr"><div className="empty">Backend unreachable — {error}</div></div>;
   if (!data) return <div className="idr"><div className="empty">Resolving identities…</div></div>;
 
-  const decide = (id: string, d: Decision) =>
-    setDecisions((prev) => ({ ...prev, [id]: prev[id] === d ? undefined! : d }));
+  const decide = (id: string, d: Decision) => {
+    const cleared = decisions[id] === d;
+    setDecisions((prev) => ({ ...prev, [id]: cleared ? undefined! : d }));
+    postDecision({
+      kind: "IDENTITY",
+      target_ref: id,
+      decision: cleared ? "NEEDS_MORE_EVIDENCE" : d === "accepted" ? "CONFIRMED" : "REJECTED",
+    }).catch(() => {});
+  };
   const tally = Object.values(decisions).filter(Boolean);
 
   return (

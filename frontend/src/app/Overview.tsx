@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { fetchOverview, type Overview as OverviewData, type Severity, type TrendAlert } from "../lib/api";
+import { fetchDecisions, postDecision } from "../lib/evidenceApi";
 import { Sparkline } from "./Sparkline";
 
 const SEV_COLOR: Record<string, string> = {
@@ -25,19 +26,39 @@ export function Overview({ onOpenMap }: { onOpenMap: () => void }) {
 
   useEffect(() => {
     fetchOverview().then(setData).catch((e) => setError(String(e)));
+    // loop closure (design review P0): acknowledged state survives reload
+    fetchDecisions()
+      .then((d) =>
+        setAcked(
+          new Set(
+            d.decisions
+              .filter((x) => x.kind === "ALERT_ACK" && x.decision === "ACKNOWLEDGED")
+              .map((x) => x.target_ref),
+          ),
+        ),
+      )
+      .catch(() => {});
   }, []);
 
   if (error) return <div className="overview"><div className="empty">Backend unreachable — {error}</div></div>;
   if (!data) return <div className="overview"><div className="empty">Loading intelligence summary…</div></div>;
 
   const alertKey = (a: TrendAlert) => `${a.station_id}-${a.subhead_id}`;
-  const toggleAck = (a: TrendAlert) =>
+  const toggleAck = (a: TrendAlert) => {
+    const k = alertKey(a);
+    const next = !acked.has(k);
     setAcked((prev) => {
-      const next = new Set(prev);
-      const k = alertKey(a);
-      next.has(k) ? next.delete(k) : next.add(k);
-      return next;
+      const s = new Set(prev);
+      next ? s.add(k) : s.delete(k);
+      return s;
     });
+    // persist with audit trail (PROV-003); UI state is optimistic
+    postDecision({
+      kind: "ALERT_ACK",
+      target_ref: k,
+      decision: next ? "ACKNOWLEDGED" : "REOPENED",
+    }).catch(() => {});
+  };
 
   const t = data.alert_tally;
 
