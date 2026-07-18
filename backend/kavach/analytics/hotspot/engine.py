@@ -9,8 +9,8 @@ Each returned hotspot carries its own evidence — the contributing case IDs, a
 crime-type breakdown, and a 24-bin time-of-day histogram — so the map can layer
 *time* over *place* and the result is explainable, not a black box.
 
-Input data is SYNTHETIC (ADR-011). This module never reads ground_truth.json;
-detection is validated against it separately.
+Input data is SYNTHETIC (ADR-011). This module never reads the generator's
+planted answer key; detection is validated against it separately.
 """
 
 from __future__ import annotations

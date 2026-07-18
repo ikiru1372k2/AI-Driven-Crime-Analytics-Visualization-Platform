@@ -6,7 +6,7 @@ LOCAL adapter — the Catalyst Data Store adapter (CAT-002) will later expose th
 same enriched-case shape behind the same functions, so API/analytics code does
 not change when persistence moves to Catalyst.
 
-All data is SYNTHETIC (ADR-011). Nothing here reads ground_truth.json.
+All data is SYNTHETIC (ADR-011). Nothing here reads the generator's answer key.
 """
 
 from __future__ import annotations
