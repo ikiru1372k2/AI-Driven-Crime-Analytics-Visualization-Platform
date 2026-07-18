@@ -214,3 +214,50 @@ export interface DistrictsResponse {
 }
 
 export const fetchDistricts = () => getJSON<DistrictsResponse>("/api/districts");
+
+// --- entity resolution (identity candidates) ---
+
+export interface IdentityMember {
+  accused_id: string;
+  case_id: string;
+  name: string;
+  age: number | null;
+  gender: string | null;
+  district_id: string | null;
+  district_name: string | null;
+}
+
+export interface IdentitySignal {
+  a: string;
+  b: string;
+  score: number;
+  name_sim: number;
+  age_gap: number | null;
+  contributing: string[];
+  contradictory: string[];
+  linked: boolean;
+}
+
+export interface IdentityCandidate {
+  cluster_id: string;
+  size: number;
+  confidence: number;
+  status: string;
+  gender: string | null;
+  name_variants: string[];
+  age_range: [number, number] | null;
+  districts: string[];
+  members: IdentityMember[];
+  signals: IdentitySignal[];
+}
+
+export interface IdentitiesResponse {
+  synthetic: boolean;
+  params: Record<string, unknown>;
+  accused_total: number;
+  pairs_scored: number;
+  candidate_count: number;
+  candidates: IdentityCandidate[];
+}
+
+export const fetchIdentities = () => getJSON<IdentitiesResponse>("/api/identities");

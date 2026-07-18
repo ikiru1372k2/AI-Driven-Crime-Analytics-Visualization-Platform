@@ -6,7 +6,7 @@
 import type { Filters } from "./api";
 
 export interface HashState {
-  view: "overview" | "map" | "graph";
+  view: "overview" | "map" | "graph" | "identities";
   filters: Partial<Filters>;
   hotspot: number | null;
   /** graph seed as "TYPE:id", e.g. "ACCUSED_RECORD:2238" (#63) */
@@ -20,9 +20,11 @@ export function readHashState(): HashState {
   if (p.get("district")) filters.districtId = p.get("district");
   if (p.get("days")) filters.days = Number(p.get("days"));
   const h = p.get("hotspot");
-  const view = p.get("view");
+  const v = p.get("view");
+  const view =
+    v === "map" ? "map" : v === "graph" ? "graph" : v === "identities" ? "identities" : "overview";
   return {
-    view: view === "map" ? "map" : view === "graph" ? "graph" : "overview",
+    view,
     filters,
     hotspot: h ? Number(h) : null,
     graphSeed: p.get("seed"),

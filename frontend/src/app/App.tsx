@@ -22,6 +22,7 @@ import { MapView } from "./MapView";
 import { Sidebar } from "./Sidebar";
 import { HotspotDetail } from "./HotspotDetail";
 import { Overview } from "./Overview";
+import { IdentityReview } from "./IdentityReview";
 import { GraphView, type GraphSeed } from "./GraphView";
 import type { NodeType } from "../lib/graphApi";
 import { readHashState, writeHashState } from "../lib/urlstate";
@@ -29,7 +30,7 @@ import "./styles.css";
 
 const DEFAULT_FILTERS: Filters = { subheadId: null, districtId: null, days: null };
 
-type View = "overview" | "map" | "graph";
+type View = "overview" | "map" | "graph" | "identities";
 
 function parseSeed(raw: string | null): GraphSeed | null {
   if (!raw) return null;
@@ -129,9 +130,17 @@ export function App() {
         <button className={"tab" + (view === "graph" ? " active" : "")} onClick={() => setView("graph")}>
           Association Graph
         </button>
+        <button
+          className={"tab" + (view === "identities" ? " active" : "")}
+          onClick={() => setView("identities")}
+        >
+          Identities
+        </button>
       </nav>
 
       {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
+
+      {view === "identities" && <IdentityReview />}
 
       {view === "graph" && <GraphView seed={graphSeed} onSeed={setGraphSeed} />}
 
