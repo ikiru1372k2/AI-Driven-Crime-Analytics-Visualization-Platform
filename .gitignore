@@ -30,3 +30,5 @@ data/synthetic/
 
 # OS / editor
 .DS_Store
+.catalyst-app/
+.playwright-mcp/
