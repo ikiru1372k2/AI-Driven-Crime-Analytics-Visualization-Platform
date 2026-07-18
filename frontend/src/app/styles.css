@@ -1190,3 +1190,38 @@ select:focus-visible {
   color: var(--ink);
   border-color: var(--series-1);
 }
+
+/* ---- association graph: floating view/lens switcher (over the canvas) ---- */
+.graph-lens-overlay {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--overlay);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
+}
+.lens-chip {
+  background: none;
+  color: var(--ink-2);
+  border: none;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+.lens-chip:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.lens-chip.active {
+  background: var(--series-1);
+  color: #fff;
+  font-weight: 600;
+}
