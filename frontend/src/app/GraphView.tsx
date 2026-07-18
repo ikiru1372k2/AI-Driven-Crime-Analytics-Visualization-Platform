@@ -55,9 +55,19 @@ const EDGE_STYLE: Record<string, { color: string; style: string; width: number }
 
 const SEED_TYPES: NodeType[] = ["CASE", "ACCUSED_RECORD", "POLICE_STATION", "DISTRICT"];
 
+/** A resolvable example id per seed type — used for the placeholder and to
+ *  auto-fill a valid id when the type changes, so you can't seed a CASE id
+ *  against an ACCUSED_RECORD (which 404s as "unknown node"). */
+const SEED_EXAMPLES: Record<string, string> = {
+  CASE: "7231",
+  ACCUSED_RECORD: "2238", // "Ravi Kumar" — the identity fragment on the Identities tab
+  POLICE_STATION: "4430", // Peenya PS (the hotspot)
+  DISTRICT: "44", // Bengaluru City
+};
+
 /** Default sample seed — case 7231, whose accused is the "Ravi Kumar" identity
  *  fragment surfaced on the Identities tab (coherent cross-feature demo). */
-const DEFAULT_SEED_CASE = "7231";
+const DEFAULT_SEED_CASE = SEED_EXAMPLES.CASE;
 
 export interface GraphSeed {
   type: NodeType;
@@ -242,7 +252,11 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           <select
             value={seedType}
             aria-label="Seed node type"
-            onChange={(e) => setSeedType(e.target.value as NodeType)}
+            onChange={(e) => {
+              const t = e.target.value as NodeType;
+              setSeedType(t);
+              setSeedId(SEED_EXAMPLES[t] ?? ""); // keep the id valid for the new type
+            }}
           >
             {SEED_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -253,7 +267,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           <input
             value={seedId}
             aria-label="Seed record id"
-            placeholder="record id, e.g. 7231"
+            placeholder={`record id, e.g. ${SEED_EXAMPLES[seedType] ?? "7231"}`}
             onChange={(e) => setSeedId(e.target.value)}
           />
           <button type="submit" disabled={loading}>
