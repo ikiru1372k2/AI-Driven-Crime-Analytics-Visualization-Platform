@@ -1248,6 +1248,87 @@ select:focus-visible {
   border-color: var(--series-1);
 }
 
+/* ---- association graph: floating "info / details" button ---- */
+.graph-info-btn {
+  position: absolute;
+  top: 3.4rem; /* below the lens control, where the detail card opens */
+  right: 12px;
+  z-index: 4;
+  background: var(--overlay);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+.graph-info-btn:hover {
+  color: var(--ink);
+  border-color: var(--series-1);
+}
+
+/* ---- association graph: hover info card ---- */
+.graph-tooltip {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, calc(-100% - 14px));
+  pointer-events: none;
+  background: var(--overlay);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  padding: 0.35rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-width: 220px;
+}
+.graph-tooltip .tt-type {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.graph-tooltip .tt-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* graph hover tooltip hint + popover navigate action */
+.graph-tooltip .tt-hint {
+  font-size: 0.58rem;
+  color: var(--series-1);
+  margin-top: 0.1rem;
+}
+.nav-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.7rem;
+  background: var(--series-1);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+.nav-btn:hover {
+  filter: brightness(1.08);
+}
+.nav-btn:active {
+  filter: brightness(0.95);
+}
+.nav-btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
 /* ============================================================
    Command shell nav (design review 1f) — 9-module story visible
    ============================================================ */

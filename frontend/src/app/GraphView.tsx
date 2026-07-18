@@ -25,7 +25,9 @@ import {
   type NodeType,
   type Subgraph,
 } from "../lib/graphApi";
+import { GraphDetailPanel } from "./GraphDetailPanel";
 import {
+  buildCyStyle,
   DEFAULT_SEED_CASE,
   EDGE_STYLE,
   LENSES,
@@ -56,13 +58,41 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [legend, setLegend] = useState<ClassificationInfo[]>([]);
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [edgeDetail, setEdgeDetail] = useState<GraphEdge | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
   const [mode, setMode] = useState<"canvas" | "list">("canvas");
   const [lens, setLens] = useState<LensKey>("full");
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ x: number; y: number; label: string; type: string } | null>(
+    null,
+  );
   const [seedType, setSeedType] = useState<NodeType>(seed?.type ?? "CASE");
   const [seedId, setSeedId] = useState<string>(seed?.id ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // previous views (graph + seed) so Back restores the prior view AND the seed
+  const mergedRef = useRef(merged);
+  const seedRef = useRef({ type: seedType, id: seedId });
+  const historyRef = useRef<
+    Array<{ nodes: Map<string, GraphNode>; edges: Map<string, GraphEdge>; type: NodeType; id: string }>
+  >([]);
+  useEffect(() => {
+    mergedRef.current = merged;
+  }, [merged]);
+  useEffect(() => {
+    seedRef.current = { type: seedType, id: seedId };
+  }, [seedType, seedId]);
+
+  // capture the current view before an action changes it
+  const snapshot = useCallback(() => {
+    if (mergedRef.current.nodes.size > 0) {
+      historyRef.current.push({
+        nodes: mergedRef.current.nodes,
+        edges: mergedRef.current.edges,
+        type: seedRef.current.type,
+        id: seedRef.current.id,
+      });
+    }
+  }, []);
 
   useEffect(() => {
     fetchClassifications().then(setLegend).catch(() => {});
@@ -103,6 +133,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     if (seed) {
       setSeedType(seed.type);
       setSeedId(seed.id);
+      expandedRef.current.clear(); // fresh seed = fresh graph
       void load(seed.type, seed.id);
     } else {
       onSeed({ type: "CASE", id: DEFAULT_SEED_CASE });
@@ -112,18 +143,63 @@ export function GraphView({ seed, onSeed, theme }: Props) {
 
   const openNode = useCallback((type: NodeType, refId: string) => {
     setEdgeDetail(null);
+    setShowDetail(false); // load it, but keep it behind the info button until asked
     fetchNodeDetail(type, refId)
       .then(setDetail)
       .catch((e) => setError(String(e)));
   }, []);
 
-  // back out of a cluster focus: clear the dimming and zoom out to the full view
-  const zoomOut = useCallback(() => {
+  // navigate (reseed) / expand (merge) — both snapshot first so Back can undo
+  const navigate = useCallback(
+    (s: GraphSeed) => {
+      snapshot();
+      setLens("full"); // show the destination's full associations, not a filtered slice
+      onSeed(s);
+    },
+    [snapshot, onSeed],
+  );
+  // remember which nodes we've already expanded so a repeat click just refocuses
+  const expandedRef = useRef(new Set<string>());
+  const expand = useCallback(
+    (type: NodeType, id: string) => {
+      const key = `${type}:${id}`;
+      setFocusId(key); // zoom to this node's cluster
+      if (expandedRef.current.has(key)) return; // already loaded — just refocus
+      expandedRef.current.add(key);
+      snapshot();
+      void load(type, id, true);
+    },
+    [snapshot, load],
+  );
+
+  // switching lens gives a CLEAN view of the current seed in that dimension —
+  // it reloads the seed's base graph so expansions from another lens don't
+  // linger (e.g. Charge expansions showing up under Full)
+  const changeLens = useCallback(
+    (key: LensKey) => {
+      if (key === lens) return; // already on this lens — don't reload
+      setLens(key);
+      setFocusId(null);
+      expandedRef.current.clear();
+      void load(seedRef.current.type, seedRef.current.id, false);
+    },
+    [load, lens],
+  );
+
+  // Back: restore the previous view AND its seed (so the form's case number
+  // resets too). Falls back to fitting the whole graph when history is empty.
+  const goBack = useCallback(() => {
     const cy = cyRef.current;
-    if (!cy) return;
-    cy.elements().removeClass("dim");
     setFocusId(null);
-    cy.animate({ fit: { eles: cy.elements(), padding: 60 }, duration: 400 });
+    cy?.elements().removeClass("dim");
+    const prev = historyRef.current.pop();
+    if (prev) {
+      setMerged({ nodes: prev.nodes, edges: prev.edges });
+      setSeedType(prev.type);
+      setSeedId(prev.id);
+    } else {
+      cy?.animate({ fit: { eles: cy.elements(), padding: 60 }, duration: 350 });
+    }
   }, []);
 
   // (re)draw cytoscape when the merged element set changes
@@ -175,8 +251,6 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         },
       })),
     ];
-    const labelInk = theme === "light" ? "#0b0b0b" : "#e8eef4";
-    const labelHalo = theme === "light" ? "#ffffff" : "#12161b";
     const cy = cytoscape({
       container: containerRef.current,
       elements,
@@ -209,113 +283,62 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       minZoom: 0.2,
       maxZoom: 2.5,
       wheelSensitivity: 0.2,
-      style: [
-        {
-          selector: "node",
-          style: {
-            label: "data(label)",
-            // size by degree: hubs large, leaf records small
-            width: "mapData(degNorm, 0, 1, 16, 52)",
-            height: "mapData(degNorm, 0, 1, 16, 52)",
-            "background-color": (el: cytoscape.NodeSingular) =>
-              NODE_COLORS[el.data("type") as string] ?? "#888",
-            "border-width": 1.5,
-            "border-color": theme === "light" ? "#ffffff" : "#12161b",
-            // label styling: bigger for hubs; a halo keeps text legible on the graph
-            "font-size": "mapData(degNorm, 0, 1, 8, 15)",
-            color: labelInk,
-            "text-outline-color": labelHalo,
-            "text-outline-width": 2,
-            "text-wrap": "ellipsis",
-            "text-max-width": "120px",
-            "text-valign": "bottom",
-            "text-margin-y": 3,
-            // hide labels when zoomed out; small (leaf) labels drop out first
-            "min-zoomed-font-size": 11,
-          },
-        },
-        {
-          selector: "node:selected",
-          style: {
-            "border-width": 3,
-            "border-color": theme === "light" ? "#0b0b0b" : "#e8eef4",
-            "min-zoomed-font-size": 0,
-            "font-size": 13,
-            "z-index": 10,
-          },
-        },
-        {
-          selector: "node.hover",
-          style: { "min-zoomed-font-size": 0, "z-index": 9 },
-        },
-        {
-          selector: "edge",
-          style: {
-            "curve-style": "bezier",
-            "line-color": (el: cytoscape.EdgeSingular) =>
-              (EDGE_STYLE[el.data("classification") as string] ?? EDGE_STYLE.FACT).color,
-            "line-style": (el: cytoscape.EdgeSingular) =>
-              (EDGE_STYLE[el.data("classification") as string] ?? EDGE_STYLE.FACT)
-                .style as cytoscape.Css.LineStyle,
-            width: (el: cytoscape.EdgeSingular) =>
-              (EDGE_STYLE[el.data("classification") as string] ?? EDGE_STYLE.FACT).width,
-            opacity: 0.3,
-          },
-        },
-        { selector: "edge:selected", style: { opacity: 1, width: 5 } },
-        { selector: "node:selected, node.hover", style: {} },
-        { selector: "edge.incident", style: { opacity: 0.9 } },
-        // dimmed = not part of the focused cluster
-        { selector: ".dim", style: { opacity: 0.08 } },
-      ],
+      style: buildCyStyle(theme) as cytoscape.StylesheetStyle[],
     });
-    // tap a node:
-    //  - a CASE is a focal record -> navigate to it (reseed, replaces the view)
-    //    so it never accumulates alongside the form's case
-    //  - a hub (place/person/charge) -> reveal its cluster in place and zoom
+    // tap a node: open its details popover (NOT navigate — no rabbit hole).
+    // Navigation happens only from the explicit button inside the popover.
     cy.on("tap", "node", (ev) => {
-      const [type, ...rest] = (ev.target.id() as string).split(":");
-      const id = rest.join(":");
-      if (type === "CASE") {
-        openNode("CASE", id);
-        onSeed({ type: "CASE", id });
-        return;
-      }
-      openNode(type as NodeType, id);
-      setFocusId(ev.target.id() as string);
-      void load(type as NodeType, id, true); // merge = keep the current graph, add neighbours
+      const type = ev.target.data("type") as NodeType;
+      const ref = ev.target.data("ref") as string;
+      setHover(null);
+      openNode(type, ref);
+      setShowDetail(true);
     });
     cy.on("tap", "edge", (ev) => {
       const e = merged.edges.get(ev.target.id() as string);
       if (e) {
         setDetail(null);
         setEdgeDetail(e);
+        setShowDetail(false); // surface via the info button, open on click
       }
     });
-    // tap empty canvas: clear the focus + dimming
+    // tap empty canvas: clear focus, dimming and any pending detail
     cy.on("tap", (ev) => {
       if (ev.target === cy) {
         cy.elements().removeClass("dim");
         setFocusId(null);
+        setDetail(null);
+        setEdgeDetail(null);
+        setShowDetail(false);
       }
     });
-    // hover: reveal the node's label + its connections even when zoomed out
+    // hover: reveal the node's label + connections, and float a small info card
     cy.on("mouseover", "node", (ev) => {
       ev.target.addClass("hover");
       ev.target.connectedEdges().addClass("incident");
       cy.container()!.style.cursor = "pointer";
+      const rp = ev.renderedPosition;
+      if (rp) {
+        setHover({
+          x: rp.x,
+          y: rp.y,
+          label: ev.target.data("label") as string,
+          type: ev.target.data("type") as string,
+        });
+      }
     });
     cy.on("mouseout", "node", (ev) => {
       ev.target.removeClass("hover");
       ev.target.connectedEdges().removeClass("incident");
       cy.container()!.style.cursor = "";
+      setHover(null);
     });
     cyRef.current = cy;
     return () => {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [merged, mode, openNode, load, onSeed, theme, lens, seedType, seedId]);
+  }, [merged, mode, openNode, theme, lens, seedType, seedId]);
 
   // zoom-to-cluster: when a node is focused (tapped), dim the rest and animate
   // the camera to fit that node and its linked records
@@ -349,7 +372,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           className="graph-seed"
           onSubmit={(e) => {
             e.preventDefault();
-            if (seedId.trim()) onSeed({ type: seedType, id: seedId.trim() });
+            if (seedId.trim()) navigate({ type: seedType, id: seedId.trim() });
           }}
         >
           <select
@@ -425,7 +448,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
                   className="linklike"
                   onClick={() => {
                     const [type, ...rest] = s.node_id.split(":");
-                    void load(type as NodeType, rest.join(":"), true);
+                    expand(type as NodeType, rest.join(":"));
                   }}
                 >
                   expand here
@@ -446,8 +469,8 @@ export function GraphView({ seed, onSeed, theme }: Props) {
 
       <div className="graph-stage">
         {mode === "canvas" && (
-          <button className="graph-zoomout" onClick={zoomOut} title="Zoom out to the full graph">
-            &#8592; Zoom out
+          <button className="graph-zoomout" onClick={goBack} title="Back to the previous view">
+            &#8592; Back
           </button>
         )}
         {mode === "canvas" && (
@@ -456,12 +479,23 @@ export function GraphView({ seed, onSeed, theme }: Props) {
               <button
                 key={l.key}
                 className={"lens-chip" + (lens === l.key ? " active" : "")}
-                onClick={() => setLens(l.key)}
+                onClick={() => changeLens(l.key)}
                 title={l.types ? `Show: ${[...l.types].join(", ")}` : "Show all node types"}
               >
                 {l.label}
               </button>
             ))}
+          </div>
+        )}
+        {mode === "canvas" && hover && (
+          <div
+            className="graph-tooltip"
+            style={{ left: hover.x, top: hover.y }}
+            aria-hidden="true"
+          >
+            <span className="tt-type">{hover.type.replace(/_/g, " ").toLowerCase()}</span>
+            <span className="tt-label">{hover.label}</span>
+            <span className="tt-hint">click to view details</span>
           </div>
         )}
         {mode === "canvas" ? (
@@ -488,96 +522,17 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           </ul>
         )}
 
-        {detail && (
-          <aside className="graph-panel" aria-label="Node detail">
-            <header>
-              <span
-                className="node-dot"
-                style={{ background: NODE_COLORS[detail.node.node_type] ?? "#888" }}
-                aria-hidden
-              />
-              <strong>{detail.node.label}</strong>
-              <button className="close" aria-label="Close detail" onClick={() => setDetail(null)}>
-                ×
-              </button>
-            </header>
-            <p className="badge">{detail.intelligence.classification_label}</p>
-            {detail.metrics && (
-              <dl className="metric-grid">
-                <dt>Co-occurring records</dt>
-                <dd>{detail.metrics.degree}</dd>
-                <dt>Shared-case links</dt>
-                <dd>{detail.metrics.co_occurrence_count}</dd>
-                <dt>Betweenness</dt>
-                <dd>{detail.metrics.betweenness.toFixed(4)}</dd>
-                <dt>Community</dt>
-                <dd>{detail.metrics.community_id}</dd>
-                <dt>Method</dt>
-                <dd>
-                  v{detail.metrics.method_version} · run {detail.metrics.run_id.slice(0, 8)}…
-                </dd>
-              </dl>
-            )}
-            {detail.metrics?.interpretation && (
-              <p className="interpretation">{detail.metrics.interpretation}</p>
-            )}
-            <p className="section-label">Linked FIRs ({detail.linked_cases.length})</p>
-            <ul className="case-list">
-              {detail.linked_cases.slice(0, 12).map((c) => (
-                <li key={c}>
-                  <button className="linklike" onClick={() => onSeed({ type: "CASE", id: String(c) })}>
-                    Case {c}
-                  </button>
-                </li>
-              ))}
-              {detail.linked_cases.length > 12 && (
-                <li className="muted">and {detail.linked_cases.length - 12} more</li>
-              )}
-            </ul>
-            <button
-              className="expand"
-              onClick={() => void load(detail.node.node_type, detail.node.entity_ref_id, true)}
-            >
-              Expand neighbourhood
-            </button>
-            {detail.intelligence.limitations?.map((l) => (
-              <p key={l} className="muted small">
-                {l}
-              </p>
-            ))}
-          </aside>
-        )}
-
-        {edgeDetail && (
-          <aside className="graph-panel" aria-label="Edge evidence">
-            <header>
-              <strong>{edgeDetail.relationship_type}</strong>
-              <button className="close" aria-label="Close evidence" onClick={() => setEdgeDetail(null)}>
-                ×
-              </button>
-            </header>
-            <p className="badge">{edgeDetail.classification}</p>
-            <dl className="metric-grid">
-              <dt>Evidence FIR</dt>
-              <dd>
-                <button
-                  className="linklike"
-                  onClick={() => onSeed({ type: "CASE", id: String(edgeDetail.evidence_case_id) })}
-                >
-                  Case {edgeDetail.evidence_case_id}
-                </button>
-              </dd>
-              <dt>Derivation</dt>
-              <dd>{edgeDetail.derivation}</dd>
-              <dt>From</dt>
-              <dd>{edgeDetail.source}</dd>
-              <dt>To</dt>
-              <dd>{edgeDetail.target}</dd>
-            </dl>
-            <p className="muted small">
-              No edge exists without an evidence case — click through to verify.
-            </p>
-          </aside>
+        {showDetail && (
+          <GraphDetailPanel
+            detail={detail}
+            edgeDetail={edgeDetail}
+            onClose={() => setShowDetail(false)}
+            onNavigate={(type, id) => {
+              setShowDetail(false);
+              navigate({ type, id });
+            }}
+            onNavigateCase={(id) => navigate({ type: "CASE", id })}
+          />
         )}
       </div>
     </div>

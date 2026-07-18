@@ -1,5 +1,6 @@
 /** Static config for the association graph view (colours, seed presets, lenses).
  *  Kept out of GraphView.tsx so the component stays under the source-size gate. */
+import type cytoscape from "cytoscape";
 import type { NodeType } from "../lib/graphApi";
 
 /** Node colours by type (status-neutral palette; classification colours
@@ -59,3 +60,65 @@ export const LENSES: { key: LensKey; label: string; types: Set<string> | null }[
     types: new Set(["CASE", "CRIME_HEAD", "CRIME_SUBHEAD", "SECTION", "COURT"]),
   },
 ];
+
+/** Cytoscape stylesheet for the graph, themed. Extracted here to keep
+ *  GraphView under the source-size gate. */
+export function buildCyStyle(theme: "dark" | "light") {
+  const labelInk = theme === "light" ? "#0b0b0b" : "#e8eef4";
+  const labelHalo = theme === "light" ? "#ffffff" : "#12161b";
+  return [
+    {
+      selector: "node",
+      style: {
+        label: "data(label)",
+        // size by degree: hubs large, leaf records small
+        width: "mapData(degNorm, 0, 1, 16, 52)",
+        height: "mapData(degNorm, 0, 1, 16, 52)",
+        "background-color": (el: cytoscape.NodeSingular) =>
+          NODE_COLORS[el.data("type") as string] ?? "#888",
+        "border-width": 1.5,
+        "border-color": theme === "light" ? "#ffffff" : "#12161b",
+        // label styling: bigger for hubs; a halo keeps text legible on the graph
+        "font-size": "mapData(degNorm, 0, 1, 8, 15)",
+        color: labelInk,
+        "text-outline-color": labelHalo,
+        "text-outline-width": 2,
+        "text-wrap": "ellipsis",
+        "text-max-width": "120px",
+        "text-valign": "bottom",
+        "text-margin-y": 3,
+        // hide labels when zoomed out; small (leaf) labels drop out first
+        "min-zoomed-font-size": 11,
+      },
+    },
+    {
+      selector: "node:selected",
+      style: {
+        "border-width": 3,
+        "border-color": theme === "light" ? "#0b0b0b" : "#e8eef4",
+        "min-zoomed-font-size": 0,
+        "font-size": 13,
+        "z-index": 10,
+      },
+    },
+    { selector: "node.hover", style: { "min-zoomed-font-size": 0, "z-index": 9 } },
+    {
+      selector: "edge",
+      style: {
+        "curve-style": "bezier",
+        "line-color": (el: cytoscape.EdgeSingular) =>
+          (EDGE_STYLE[el.data("classification") as string] ?? EDGE_STYLE.FACT).color,
+        "line-style": (el: cytoscape.EdgeSingular) =>
+          (EDGE_STYLE[el.data("classification") as string] ?? EDGE_STYLE.FACT)
+            .style as cytoscape.Css.LineStyle,
+        width: (el: cytoscape.EdgeSingular) =>
+          (EDGE_STYLE[el.data("classification") as string] ?? EDGE_STYLE.FACT).width,
+        opacity: 0.55,
+      },
+    },
+    { selector: "edge:selected", style: { opacity: 1, width: 5 } },
+    { selector: "node:selected, node.hover", style: {} },
+    { selector: "edge.incident", style: { opacity: 0.9 } },
+    { selector: ".dim", style: { opacity: 0.08 } },
+  ];
+}
