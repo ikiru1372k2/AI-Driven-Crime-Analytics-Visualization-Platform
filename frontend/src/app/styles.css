@@ -1304,37 +1304,28 @@ select:focus-visible {
   color: var(--series-1);
   margin-top: 0.1rem;
 }
-.panel-actions {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: 0.3rem;
-}
-.panel-actions .nav-btn {
-  flex: 1 1 auto;
+.nav-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.7rem;
   background: var(--series-1);
   color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: 7px;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem 0.7rem;
   cursor: pointer;
+  transition: filter 0.12s ease;
 }
-.panel-actions .nav-btn:hover {
-  filter: brightness(1.1);
+.nav-btn:hover {
+  filter: brightness(1.08);
 }
-.panel-actions .expand {
-  background: var(--surface-2);
-  color: var(--ink-2);
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  font: inherit;
-  font-size: 0.78rem;
-  padding: 0.4rem 0.6rem;
-  cursor: pointer;
+.nav-btn:active {
+  filter: brightness(0.95);
 }
-.panel-actions .expand:hover {
-  border-color: var(--series-1);
-  color: var(--ink);
+.nav-btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
