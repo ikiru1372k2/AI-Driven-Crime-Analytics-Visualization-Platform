@@ -6,7 +6,7 @@
 import type { Filters } from "./api";
 
 export interface HashState {
-  view: "overview" | "map";
+  view: "overview" | "map" | "identities";
   filters: Partial<Filters>;
   hotspot: number | null;
 }
@@ -18,8 +18,9 @@ export function readHashState(): HashState {
   if (p.get("district")) filters.districtId = p.get("district");
   if (p.get("days")) filters.days = Number(p.get("days"));
   const h = p.get("hotspot");
+  const v = p.get("view");
   return {
-    view: p.get("view") === "map" ? "map" : "overview",
+    view: v === "map" ? "map" : v === "identities" ? "identities" : "overview",
     filters,
     hotspot: h ? Number(h) : null,
   };

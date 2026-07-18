@@ -725,3 +725,229 @@ select:focus-visible {
   color: var(--accent-night);
   font-weight: 600;
 }
+
+/* ---- identity resolution review (#65) ---- */
+.idr {
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 2.5rem;
+  background: var(--page);
+}
+.idr-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.idr-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.idr-head .sub {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  max-width: 60ch;
+}
+.idr-search {
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 240px;
+}
+.idr-search:focus-visible {
+  outline: 2px solid var(--series-1);
+}
+.idr-tally {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.9rem 0 1rem;
+}
+.chip-stat {
+  font-size: 0.72rem;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+}
+.chip-stat.accept {
+  color: var(--good);
+}
+.chip-stat.reject {
+  color: var(--critical);
+}
+.idr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 900px;
+}
+.id-card {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.id-card.accepted {
+  border-color: rgba(12, 163, 12, 0.55);
+}
+.id-card.rejected {
+  border-color: rgba(208, 59, 59, 0.5);
+  opacity: 0.7;
+}
+.id-summary {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0.7rem 0.9rem;
+  cursor: pointer;
+}
+.id-summary:hover {
+  background: var(--surface-2);
+}
+.id-names {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.id-facts {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  font-size: 0.74rem;
+  color: var(--muted);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.id-facts .conf {
+  font-weight: 700;
+  color: var(--series-1);
+  font-variant-numeric: tabular-nums;
+}
+.id-facts .cross {
+  color: var(--accent-night);
+  font-weight: 600;
+}
+.id-detail {
+  border-top: 1px solid var(--hairline);
+  padding: 0.8rem 0.9rem 1rem;
+}
+.id-districts {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.8rem;
+}
+.dchip {
+  font-size: 0.7rem;
+  background: rgba(57, 135, 229, 0.15);
+  border: 1px solid rgba(57, 135, 229, 0.4);
+  color: #9ec5f4;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+}
+.id-members {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 0.9rem;
+}
+.id-member {
+  display: grid;
+  grid-template-columns: 1.4fr auto 1fr 1fr;
+  gap: 0.6rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-2);
+  border-radius: 4px;
+  font-size: 0.76rem;
+}
+.id-member .mn {
+  font-weight: 600;
+}
+.id-member .ma,
+.id-member .md,
+.id-member .mc {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.id-signals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.9rem;
+}
+.sig {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+}
+.sig-score {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.4rem;
+}
+.sig-body {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.tag {
+  font-size: 0.68rem;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--hairline);
+}
+.tag.ok {
+  color: #9ec5f4;
+  border-color: rgba(57, 135, 229, 0.35);
+}
+.tag.bad {
+  color: var(--critical);
+  border-color: rgba(208, 59, 59, 0.45);
+}
+.id-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.act {
+  border: 1px solid var(--hairline);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+.act.accept.on {
+  background: var(--good);
+  border-color: var(--good);
+  color: #fff;
+}
+.act.reject.on {
+  background: var(--critical);
+  border-color: var(--critical);
+  color: #fff;
+}
+.act:hover {
+  border-color: var(--ink-2);
+}
+.status-note {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-left: auto;
+}

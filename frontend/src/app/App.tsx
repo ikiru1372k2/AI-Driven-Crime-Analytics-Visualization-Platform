@@ -22,12 +22,13 @@ import { MapView } from "./MapView";
 import { Sidebar } from "./Sidebar";
 import { HotspotDetail } from "./HotspotDetail";
 import { Overview } from "./Overview";
+import { IdentityReview } from "./IdentityReview";
 import { readHashState, writeHashState } from "../lib/urlstate";
 import "./styles.css";
 
 const DEFAULT_FILTERS: Filters = { subheadId: null, districtId: null, days: null };
 
-type View = "overview" | "map";
+type View = "overview" | "map" | "identities";
 
 export function App() {
   const initial = readHashState();
@@ -112,9 +113,17 @@ export function App() {
         <button className={"tab" + (view === "map" ? " active" : "")} onClick={() => setView("map")}>
           Hotspot Map
         </button>
+        <button
+          className={"tab" + (view === "identities" ? " active" : "")}
+          onClick={() => setView("identities")}
+        >
+          Identities
+        </button>
       </nav>
 
       {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
+
+      {view === "identities" && <IdentityReview />}
 
       {view === "map" && (
       <div className="body">
