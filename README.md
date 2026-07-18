@@ -34,18 +34,82 @@ A state-level crime intelligence platform that turns Karnataka Police FIR record
 
 The supplied Police FIR ER design document is kept locally under `schema/` and is **not committed** (marked confidential by its issuer); the committed conformance matrix is the working catalogue.
 
-## Development
+## Prerequisites
+
+| Tool | Notes |
+|---|---|
+| Python 3.11+ | Backend (FastAPI / uvicorn) |
+| Node.js 20+ / npm | Frontend (Vite + React) |
+| Make | Optional; wraps common commands |
+
+## How to run (local development)
+
+You need **two terminals**: backend on port **8000**, frontend on port **5173**.
+
+### 1. Backend API
 
 ```bash
-# backend
-cd backend && python3 -m venv .venv && . .venv/bin/activate
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-make lint test backend-dev   # from repo root
+```
 
-# frontend
-cd frontend && npm install
+From the **repo root** (with the venv still active):
+
+```bash
+make backend-dev
+```
+
+Or equivalently:
+
+```bash
+cd backend
+uvicorn kavach.api.main:app --reload --port 8000
+```
+
+| Check | URL |
+|---|---|
+| Health | http://127.0.0.1:8000/health |
+| OpenAPI docs | http://127.0.0.1:8000/docs |
+
+### 2. Frontend console
+
+In a **second terminal**:
+
+```bash
+cd frontend
+npm install
 npm run dev
 ```
+
+Open **http://localhost:5173** (not a LAN IP — Vite binds to `127.0.0.1` by default).
+
+The UI calls the API at `http://127.0.0.1:8000` by default. Override if needed:
+
+```bash
+VITE_API_BASE=http://127.0.0.1:8000 npm run dev
+```
+
+### Make targets (repo root)
+
+| Command | What it does |
+|---|---|
+| `make backend-dev` | Start FastAPI on `:8000` with reload |
+| `make frontend-dev` | Start Vite on `:5173` |
+| `make lint` | Ruff check (`backend/`) |
+| `make test` | Pytest (`backend/`) |
+| `make build` | Production frontend build |
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `Backend unreachable — Failed to fetch` | Start the backend on **8000**; confirm http://127.0.0.1:8000/health |
+| `ERR_CONNECTION_REFUSED` on `192.168.x.x:5173` | Use **http://localhost:5173** — Vite listens on localhost only |
+| Wrong API host/port | Set `VITE_API_BASE` when starting the frontend |
+
+> Demo data is **synthetic** ([ADR-011](docs/architecture/adr/ADR-011-demo-data-strategy.md)). The yellow banner in the UI is expected.
 
 ## Engineering delivery
 
