@@ -107,6 +107,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [edgeDetail, setEdgeDetail] = useState<GraphEdge | null>(null);
   const [mode, setMode] = useState<"canvas" | "list">("canvas");
   const [lens, setLens] = useState<LensKey>("full");
+  const [focusId, setFocusId] = useState<string | null>(null);
   const [seedType, setSeedType] = useState<NodeType>(seed?.type ?? "CASE");
   const [seedId, setSeedId] = useState<string>(seed?.id ?? "");
   const [loading, setLoading] = useState(false);
@@ -210,6 +211,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           target: e.target,
           classification: e.classification,
           rel: e.relationship_type,
+          weight: e.weight,
         },
       })),
     ];
@@ -223,7 +225,19 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         animate: false,
         padding: 60,
         nodeRepulsion: () => 16000,
-        idealEdgeLength: () => 120,
+        // distance encodes association strength: stronger link -> shorter edge
+        // (closer). Weight raises strength; unconfirmed/AI links sit farther out.
+        idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
+          const w = Math.max(1, Number(edge.data("weight")) || 1);
+          const cls = edge.data("classification") as string;
+          const far =
+            cls === "AI_DERIVED" || cls === "POTENTIAL_ASSOCIATION"
+              ? 1.7
+              : cls === "HUMAN_CONFIRMED"
+                ? 0.7
+                : 1.0;
+          return (55 + 120 / Math.sqrt(w)) * far;
+        },
         edgeElasticity: () => 100,
         nodeOverlap: 28,
         componentSpacing: 160,
@@ -291,17 +305,31 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         { selector: "edge:selected", style: { opacity: 1, width: 5 } },
         { selector: "node:selected, node.hover", style: {} },
         { selector: "edge.incident", style: { opacity: 0.9 } },
+        // dimmed = not part of the focused cluster
+        { selector: ".dim", style: { opacity: 0.08 } },
       ],
     });
+    // tap a node: pull its linked records into view (expand) and zoom to that
+    // cluster, rather than only opening a card
     cy.on("tap", "node", (ev) => {
       const [type, ...rest] = (ev.target.id() as string).split(":");
-      openNode(type as NodeType, rest.join(":"));
+      const id = rest.join(":");
+      openNode(type as NodeType, id);
+      setFocusId(ev.target.id() as string);
+      void load(type as NodeType, id, true); // merge = keep the current graph, add neighbours
     });
     cy.on("tap", "edge", (ev) => {
       const e = merged.edges.get(ev.target.id() as string);
       if (e) {
         setDetail(null);
         setEdgeDetail(e);
+      }
+    });
+    // tap empty canvas: clear the focus + dimming
+    cy.on("tap", (ev) => {
+      if (ev.target === cy) {
+        cy.elements().removeClass("dim");
+        setFocusId(null);
       }
     });
     // hover: reveal the node's label + its connections even when zoomed out
@@ -320,7 +348,21 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [merged, mode, openNode, theme, lens, seedType, seedId]);
+  }, [merged, mode, openNode, load, theme, lens, seedType, seedId]);
+
+  // zoom-to-cluster: when a node is focused (tapped), dim the rest and animate
+  // the camera to fit that node and its linked records
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !focusId) return;
+    const node = cy.getElementById(focusId);
+    if (node.empty()) return;
+    const cluster = node.closedNeighborhood();
+    cy.elements().removeClass("dim");
+    cy.elements().not(cluster).addClass("dim");
+    node.select();
+    cy.animate({ fit: { eles: cluster, padding: 90 }, duration: 550, easing: "ease-in-out" });
+  }, [focusId, merged]);
 
   const stubs = subgraph?.stubs;
   const nodeList = [...merged.nodes.values()].sort((a, b) =>

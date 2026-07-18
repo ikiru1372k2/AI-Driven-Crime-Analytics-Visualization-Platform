@@ -869,10 +869,10 @@ select:focus-visible {
 }
 .graph-panel {
   position: absolute;
-  top: 0.9rem;
+  top: 3.4rem; /* clear the floating lens control in the top-right corner */
   right: 0.9rem;
   width: 300px;
-  max-height: calc(100% - 1.8rem);
+  max-height: calc(100% - 4.3rem);
   overflow-y: auto;
   background: var(--surface-1);
   border: 1px solid var(--hairline);
