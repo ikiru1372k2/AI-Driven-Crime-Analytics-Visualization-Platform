@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from kavach import __version__
 from kavach.api.audit_routes import router as audit_router
+from kavach.api.evidence_routes import router as evidence_router
 from kavach.api.graph_routes import router as graph_router
 from kavach.api.routes import router as analytics_router
 
@@ -39,6 +40,7 @@ app.add_middleware(
 app.include_router(analytics_router)
 app.include_router(graph_router)
 app.include_router(audit_router)
+app.include_router(evidence_router)
 
 
 @app.get("/health")

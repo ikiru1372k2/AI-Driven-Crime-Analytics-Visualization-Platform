@@ -24,6 +24,9 @@ import { HotspotDetail } from "./HotspotDetail";
 import { Overview } from "./Overview";
 import { IdentityReview } from "./IdentityReview";
 import { GraphView, type GraphSeed } from "./GraphView";
+import { EvidenceView } from "./EvidenceView";
+import { CommandNav, type ModuleView } from "./CommandNav";
+import { TimeScrubber } from "./TimeScrubber";
 import type { NodeType } from "../lib/graphApi";
 import { readHashState, writeHashState } from "../lib/urlstate";
 import { initialTheme, applyTheme, type Theme } from "../lib/theme";
@@ -31,7 +34,7 @@ import "./styles.css";
 
 const DEFAULT_FILTERS: Filters = { subheadId: null, districtId: null, days: null };
 
-type View = "overview" | "map" | "graph" | "identities";
+type View = ModuleView;
 
 function parseSeed(raw: string | null): GraphSeed | null {
   if (!raw) return null;
@@ -125,36 +128,27 @@ export function App() {
         </span>
       </header>
 
-      <nav className="tabs">
-        <span className="tab-brand">KAVACH AI</span>
-        <button className={"tab" + (view === "overview" ? " active" : "")} onClick={() => setView("overview")}>
-          Overview
-        </button>
-        <button className={"tab" + (view === "map" ? " active" : "")} onClick={() => setView("map")}>
-          Hotspot Map
-        </button>
-        <button className={"tab" + (view === "graph" ? " active" : "")} onClick={() => setView("graph")}>
-          Association Graph
-        </button>
-        <button
-          className={"tab" + (view === "identities" ? " active" : "")}
-          onClick={() => setView("identities")}
-        >
-          Identities
-        </button>
-        <button
-          className="theme-toggle"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-        >
-          {theme === "dark" ? "☀ Light" : "☾ Dark"}
-        </button>
-      </nav>
+      <CommandNav
+        view={view}
+        onView={setView}
+        alertCount={alerts.length}
+        identityCount={0}
+        theme={theme}
+        onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+      />
 
       {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
 
       {view === "identities" && <IdentityReview />}
+
+      {view === "evidence" && (
+        <EvidenceView
+          onOpenCase={(caseId) => {
+            setGraphSeed({ type: "CASE", id: String(caseId) });
+            setView("graph");
+          }}
+        />
+      )}
 
       {view === "graph" && <GraphView seed={graphSeed} onSeed={setGraphSeed} theme={theme} />}
 
@@ -199,6 +193,7 @@ export function App() {
               onClose={() => setSelectedRank(null)}
             />
           )}
+          {meta && <TimeScrubber filters={filters} onFilters={onFilters} />}
         </div>
       </div>
       )}
