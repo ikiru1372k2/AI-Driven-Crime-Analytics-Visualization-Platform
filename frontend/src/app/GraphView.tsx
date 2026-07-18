@@ -105,7 +105,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const sg = await fetchSubgraph(type, id, { depth: 2 });
+        const sg = await fetchSubgraph(type, id, { depth: 2, limit: 60 });
         setSubgraph(sg);
         setMerged((prev) => {
           const nodes = merge ? new Map(prev.nodes) : new Map<string, GraphNode>();
@@ -151,9 +151,23 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   useEffect(() => {
     if (mode !== "canvas" || !containerRef.current) return;
     cyRef.current?.destroy();
+    // node degree drives size + label priority so hubs read and leaves recede
+    const degree = new Map<string, number>();
+    for (const e of merged.edges.values()) {
+      degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+      degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+    }
+    const maxDeg = Math.max(1, ...degree.values());
     const elements = [
       ...[...merged.nodes.values()].map((n) => ({
-        data: { id: n.node_id, label: n.label, type: n.node_type, ref: n.entity_ref_id },
+        data: {
+          id: n.node_id,
+          label: n.label,
+          type: n.node_type,
+          ref: n.entity_ref_id,
+          deg: degree.get(n.node_id) ?? 0,
+          degNorm: (degree.get(n.node_id) ?? 0) / maxDeg,
+        },
       })),
       ...[...merged.edges.values()].map((e) => ({
         data: {
@@ -165,33 +179,66 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         },
       })),
     ];
+    const labelInk = theme === "light" ? "#0b0b0b" : "#e8eef4";
+    const labelHalo = theme === "light" ? "#ffffff" : "#12161b";
     const cy = cytoscape({
       container: containerRef.current,
       elements,
-      layout: { name: "cose", animate: false, padding: 40 },
+      layout: {
+        name: "cose",
+        animate: false,
+        padding: 60,
+        nodeRepulsion: () => 16000,
+        idealEdgeLength: () => 120,
+        edgeElasticity: () => 100,
+        nodeOverlap: 28,
+        componentSpacing: 160,
+        gravity: 0.2,
+        numIter: 2200,
+        randomize: true,
+        fit: true,
+      },
+      minZoom: 0.2,
+      maxZoom: 2.5,
       wheelSensitivity: 0.2,
       style: [
         {
           selector: "node",
           style: {
             label: "data(label)",
-            "font-size": 9,
-            color: theme === "light" ? "#0b0b0b" : "#dce3ea",
-            "text-wrap": "ellipsis",
-            "text-max-width": "110px",
-            "text-valign": "bottom",
-            "text-margin-y": 4,
-            width: 22,
-            height: 22,
+            // size by degree: hubs large, leaf records small
+            width: "mapData(degNorm, 0, 1, 16, 52)",
+            height: "mapData(degNorm, 0, 1, 16, 52)",
             "background-color": (el: cytoscape.NodeSingular) =>
               NODE_COLORS[el.data("type") as string] ?? "#888",
-            "border-width": 1,
-            "border-color": theme === "light" ? "#ffffff" : "#1c232b",
+            "border-width": 1.5,
+            "border-color": theme === "light" ? "#ffffff" : "#12161b",
+            // label styling: bigger for hubs; a halo keeps text legible on the graph
+            "font-size": "mapData(degNorm, 0, 1, 8, 15)",
+            color: labelInk,
+            "text-outline-color": labelHalo,
+            "text-outline-width": 2,
+            "text-wrap": "ellipsis",
+            "text-max-width": "120px",
+            "text-valign": "bottom",
+            "text-margin-y": 3,
+            // hide labels when zoomed out; small (leaf) labels drop out first
+            "min-zoomed-font-size": 11,
           },
         },
         {
           selector: "node:selected",
-          style: { "border-width": 3, "border-color": theme === "light" ? "#0b0b0b" : "#e8eef4" },
+          style: {
+            "border-width": 3,
+            "border-color": theme === "light" ? "#0b0b0b" : "#e8eef4",
+            "min-zoomed-font-size": 0,
+            "font-size": 13,
+            "z-index": 10,
+          },
+        },
+        {
+          selector: "node.hover",
+          style: { "min-zoomed-font-size": 0, "z-index": 9 },
         },
         {
           selector: "edge",
@@ -204,10 +251,12 @@ export function GraphView({ seed, onSeed, theme }: Props) {
                 .style as cytoscape.Css.LineStyle,
             width: (el: cytoscape.EdgeSingular) =>
               (EDGE_STYLE[el.data("classification") as string] ?? EDGE_STYLE.FACT).width,
-            opacity: 0.85,
+            opacity: 0.3,
           },
         },
         { selector: "edge:selected", style: { opacity: 1, width: 5 } },
+        { selector: "node:selected, node.hover", style: {} },
+        { selector: "edge.incident", style: { opacity: 0.9 } },
       ],
     });
     cy.on("tap", "node", (ev) => {
@@ -220,6 +269,17 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         setDetail(null);
         setEdgeDetail(e);
       }
+    });
+    // hover: reveal the node's label + its connections even when zoomed out
+    cy.on("mouseover", "node", (ev) => {
+      ev.target.addClass("hover");
+      ev.target.connectedEdges().addClass("incident");
+      cy.container()!.style.cursor = "pointer";
+    });
+    cy.on("mouseout", "node", (ev) => {
+      ev.target.removeClass("hover");
+      ev.target.connectedEdges().removeClass("incident");
+      cy.container()!.style.cursor = "";
     });
     cyRef.current = cy;
     return () => {
