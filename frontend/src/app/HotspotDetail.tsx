@@ -3,14 +3,24 @@
  * evidence plus a 24-bin time-of-day histogram, with the night window
  * (21:00–02:00) highlighted so a spike there is unmistakable.
  */
-import type { Hotspot } from "../lib/api";
+import type { CaseRecord, Hotspot } from "../lib/api";
 
 const NIGHT_HOURS = new Set([21, 22, 23, 0, 1, 2]);
 
-export function HotspotDetail({ hotspot, onClose }: { hotspot: Hotspot; onClose: () => void }) {
+interface Props {
+  hotspot: Hotspot;
+  cases: CaseRecord[];
+  hasActiveAlert: boolean;
+  onClose: () => void;
+}
+
+export function HotspotDetail({ hotspot, cases, hasActiveAlert, onClose }: Props) {
   const hist = hotspot.hour_histogram;
   const maxH = Math.max(1, ...hist);
   const breakdown = Object.entries(hotspot.crime_breakdown).sort((a, b) => b[1] - a[1]);
+  // drill leaf: the cluster's member cases (case_ids joined to the loaded case set)
+  const idSet = new Set(hotspot.case_ids);
+  const members = cases.filter((c) => idSet.has(c.CaseMasterID));
 
   return (
     <aside className="detail" aria-label="Hotspot detail">
@@ -23,6 +33,16 @@ export function HotspotDetail({ hotspot, onClose }: { hotspot: Hotspot; onClose:
       <p className="sub">
         {hotspot.district_name ?? ""} · top crime: {hotspot.top_crime ?? "—"}
       </p>
+      <div className="badges">
+        <span className="badge ai" title="Derived by DBSCAN clustering over synthetic data">
+          AI-DERIVED
+        </span>
+        {hasActiveAlert && (
+          <span className="badge alert" title="An active emerging-trend alert covers this station">
+            ● ACTIVE ALERT
+          </span>
+        )}
+      </div>
 
       <div className="kv">
         <span className="k">Cases in cluster</span>
@@ -75,6 +95,25 @@ export function HotspotDetail({ hotspot, onClose }: { hotspot: Hotspot; onClose:
           ))}
         </div>
       )}
+
+      {/* drill leaf: cases in this cluster */}
+      <div className="caselist">
+        <div className="section-label">Cases in cluster ({hotspot.case_count})</div>
+        <div className="case-rows">
+          {members.map((c) => (
+            <div className="case-row" key={c.CaseMasterID}>
+              <span className="cn" title={`FIR ${c.CrimeNo}`}>{c.CrimeNo}</span>
+              <span className="cd">{c.incident_from ?? c.registered_date ?? ""}</span>
+              <span className={"cg" + (c.gravity === "Heinous" ? " heinous" : "")}>
+                {c.gravity ?? "—"}
+              </span>
+            </div>
+          ))}
+          {members.length === 0 && (
+            <div className="empty">Member cases outside the current filter window.</div>
+          )}
+        </div>
+      </div>
     </aside>
   );
 }

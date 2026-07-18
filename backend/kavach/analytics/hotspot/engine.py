@@ -98,6 +98,7 @@ def detect_hotspots(
             "top_crime": crime_breakdown.most_common(1)[0][0] if crime_breakdown else None,
             "crime_breakdown": dict(crime_breakdown),
             "district_name": c["district_name"].mode().iat[0] if not c.empty else None,
+            "station_id": c["station_id"].mode().iat[0] if not c.empty else None,
             "station_name": c["station_name"].mode().iat[0] if not c.empty else None,
             "hour_histogram": hour_hist,
             "night_share": round(night / len(c), 3),

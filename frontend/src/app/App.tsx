@@ -9,28 +9,33 @@ import {
   fetchCases,
   fetchHotspots,
   fetchMeta,
+  fetchTrends,
   type CaseRecord,
   type Filters,
   type Hotspot,
   type Meta,
+  type TrendAlert,
 } from "../lib/api";
 import { MapView } from "./MapView";
 import { Sidebar } from "./Sidebar";
 import { HotspotDetail } from "./HotspotDetail";
 import { Overview } from "./Overview";
+import { readHashState, writeHashState } from "../lib/urlstate";
 import "./styles.css";
 
-const DEFAULT_FILTERS: Filters = { subheadId: null, days: null };
+const DEFAULT_FILTERS: Filters = { subheadId: null, districtId: null, days: null };
 
 type View = "overview" | "map";
 
 export function App() {
-  const [view, setView] = useState<View>("overview");
+  const initial = readHashState();
+  const [view, setView] = useState<View>(initial.view);
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, ...initial.filters });
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
-  const [selectedRank, setSelectedRank] = useState<number | null>(null);
+  const [alerts, setAlerts] = useState<TrendAlert[]>([]);
+  const [selectedRank, setSelectedRank] = useState<number | null>(initial.hotspot);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,19 +44,19 @@ export function App() {
     fetchMeta().then(setMeta).catch((e) => setError(String(e)));
   }, []);
 
-  // (re)query cases + hotspots whenever filters change
+  // (re)query cases + hotspots + active alerts whenever filters change
   useEffect(() => {
     if (!meta) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
     const latest = meta.date_range.to;
-    Promise.all([fetchCases(filters, latest), fetchHotspots(filters)])
-      .then(([c, h]) => {
+    Promise.all([fetchCases(filters, latest), fetchHotspots(filters), fetchTrends(filters)])
+      .then(([c, h, t]) => {
         if (cancelled) return;
         setCases(c.cases);
         setHotspots(h.hotspots);
-        setSelectedRank(null);
+        setAlerts(t.alerts);
       })
       .catch((e) => !cancelled && setError(String(e)))
       .finally(() => !cancelled && setLoading(false));
@@ -60,9 +65,25 @@ export function App() {
     };
   }, [meta, filters]);
 
+  // keep the URL hash in sync so any view is shareable / reloadable
+  useEffect(() => {
+    writeHashState({ view, filters, hotspot: selectedRank });
+  }, [view, filters, selectedRank]);
+
+  // changing a filter invalidates the current hotspot selection
+  const onFilters = useCallback((f: Filters) => {
+    setFilters(f);
+    setSelectedRank(null);
+  }, []);
+
   const onSelectHotspot = useCallback((h: Hotspot | null) => {
     setSelectedRank(h ? h.rank : null);
   }, []);
+
+  // stations with an ACTIVE trend alert — the map pulses only these (never otherwise)
+  const alertStationIds = new Set(
+    alerts.map((a) => a.station_id).filter((s): s is string => s != null),
+  );
 
   const selected = hotspots.find((h) => h.rank === selectedRank) ?? null;
   const center = meta?.map_center ?? { lat: 12.97, lon: 77.59 };
@@ -96,9 +117,10 @@ export function App() {
         <Sidebar
           meta={meta}
           filters={filters}
-          onFilters={setFilters}
+          onFilters={onFilters}
           caseCount={cases.length}
           hotspots={hotspots}
+          alertStationIds={alertStationIds}
           selectedRank={selectedRank}
           onSelectHotspot={onSelectHotspot}
           loading={loading}
@@ -110,6 +132,7 @@ export function App() {
               center={center}
               cases={cases}
               hotspots={hotspots}
+              alertStationIds={alertStationIds}
               selectedRank={selectedRank}
               onSelectHotspot={onSelectHotspot}
             />
@@ -119,7 +142,12 @@ export function App() {
             </div>
           )}
           {selected && (
-            <HotspotDetail hotspot={selected} onClose={() => setSelectedRank(null)} />
+            <HotspotDetail
+              hotspot={selected}
+              cases={cases}
+              hasActiveAlert={selected.station_id != null && alertStationIds.has(selected.station_id)}
+              onClose={() => setSelectedRank(null)}
+            />
           )}
         </div>
       </div>
