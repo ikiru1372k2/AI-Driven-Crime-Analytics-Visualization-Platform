@@ -6,12 +6,21 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { CaseRecord, Hotspot } from "../lib/api";
+import type { CaseRecord, DistrictStat, Hotspot } from "../lib/api";
 import { circlePolygon, featureCollection, pointFeature } from "../lib/geo";
 
 const CASE_SRC = "cases";
 const HOT_FILL_SRC = "hotspot-fills";
 const HOT_PT_SRC = "hotspot-centers";
+const DIST_SRC = "districts";
+
+/** Velocity → sequential-blue fill (cool = steady/cooling, bright = rising). */
+function velocityColor(v: number | null): string {
+  if (v == null || v < 0.95) return "#24425f";
+  if (v < 1.1) return "#256abf";
+  if (v < 1.25) return "#3987e5";
+  return "#6da7ec";
+}
 
 // Free, token-less dark basemap (CARTO). Attribution required.
 const STYLE: maplibregl.StyleSpecification = {
@@ -35,6 +44,9 @@ interface Props {
   center: { lat: number; lon: number };
   cases: CaseRecord[];
   hotspots: Hotspot[];
+  districtStats: DistrictStat[];
+  activeDistrictId: string | null;
+  onDrillDistrict: (districtId: string) => void;
   alertStationIds: Set<string>;
   selectedRank: number | null;
   onSelectHotspot: (h: Hotspot | null) => void;
@@ -44,6 +56,9 @@ export function MapView({
   center,
   cases,
   hotspots,
+  districtStats,
+  activeDistrictId,
+  onDrillDistrict,
   alertStationIds,
   selectedRank,
   onSelectHotspot,
@@ -52,8 +67,11 @@ export function MapView({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const readyRef = useRef(false);
   const pulseMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const districtGeoRef = useRef<GeoJSON.FeatureCollection | null>(null);
   const onSelectRef = useRef(onSelectHotspot);
   onSelectRef.current = onSelectHotspot;
+  const onDrillRef = useRef(onDrillDistrict);
+  onDrillRef.current = onDrillDistrict;
 
   // --- create the map once ---
   useEffect(() => {
@@ -72,6 +90,21 @@ export function MapView({
       map.addSource(CASE_SRC, { type: "geojson", data: featureCollection([]) });
       map.addSource(HOT_FILL_SRC, { type: "geojson", data: featureCollection([]) });
       map.addSource(HOT_PT_SRC, { type: "geojson", data: featureCollection([]) });
+      map.addSource(DIST_SRC, { type: "geojson", data: featureCollection([]) });
+
+      // district choropleth (case velocity) — beneath everything else
+      map.addLayer({
+        id: "district-fill",
+        type: "fill",
+        source: DIST_SRC,
+        paint: { "fill-color": ["get", "fill"], "fill-opacity": 0.4 },
+      });
+      map.addLayer({
+        id: "district-border",
+        type: "line",
+        source: DIST_SRC,
+        paint: { "line-color": "#5b6b7a", "line-width": 1 },
+      });
 
       // case points
       map.addLayer({
@@ -128,7 +161,40 @@ export function MapView({
 
       readyRef.current = true;
       syncData();
-      fitToData();
+
+      // load the (static, external) district boundaries, then paint the choropleth
+      fetch("karnataka-districts.geojson")
+        .then((r) => r.json())
+        .then((geo: GeoJSON.FeatureCollection) => {
+          districtGeoRef.current = geo;
+          updateDistricts();
+          fitToData();
+        })
+        .catch(() => fitToData());
+
+      // district drill + hover
+      const dpopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
+      map.on("click", "district-fill", (e) => {
+        const id = e.features?.[0]?.properties?.district_id;
+        if (id) onDrillRef.current(String(id));
+      });
+      map.on("mousemove", "district-fill", (e) => {
+        const p = e.features?.[0]?.properties as Record<string, string> | undefined;
+        if (!p) return;
+        map.getCanvas().style.cursor = "pointer";
+        dpopup
+          .setLngLat(e.lngLat)
+          .setHTML(
+            `<div class="popup-title">${p.district_name}</div>` +
+              `<div class="popup-row">${p.case_count} cases · velocity ${p.velocity ?? "—"}</div>` +
+              `<div class="popup-row">click to drill in</div>`,
+          )
+          .addTo(map);
+      });
+      map.on("mouseleave", "district-fill", () => {
+        map.getCanvas().style.cursor = "";
+        dpopup.remove();
+      });
 
       // interactions
       const clickable = ["hotspot-fill", "hotspot-count"];
@@ -228,6 +294,36 @@ export function MapView({
     }
   }
 
+  // Paint the district choropleth by case velocity; the fill is baked into each
+  // feature's `fill` property. Fills show at the state level and hide once a
+  // district is drilled into (borders stay for context).
+  function updateDistricts() {
+    const map = mapRef.current;
+    const geo = districtGeoRef.current;
+    if (!map || !readyRef.current || !geo) return;
+    const byId = new Map(districtStats.map((d) => [d.district_id, d]));
+    const feats = geo.features.map((f) => {
+      const id = String(f.properties?.district_id);
+      const st = byId.get(id);
+      return {
+        ...f,
+        properties: {
+          ...f.properties,
+          fill: velocityColor(st?.velocity ?? null),
+          case_count: st?.case_count ?? 0,
+          velocity: st?.velocity ?? null,
+        },
+      };
+    });
+    (map.getSource(DIST_SRC) as maplibregl.GeoJSONSource)?.setData({
+      type: "FeatureCollection",
+      features: feats,
+    });
+    if (map.getLayer("district-fill")) {
+      map.setLayoutProperty("district-fill", "visibility", activeDistrictId ? "none" : "visible");
+    }
+  }
+
   function fitToData() {
     const map = mapRef.current;
     if (!map) return;
@@ -250,6 +346,12 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hotspots, alertStationIds]);
 
+  // repaint the district choropleth on stats or drill-scope change
+  useEffect(() => {
+    updateDistricts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [districtStats, activeDistrictId]);
+
   // refit the viewport when the underlying case set changes (filter change)
   useEffect(() => {
     fitToData();
@@ -270,6 +372,10 @@ export function MapView({
       <div className="map" ref={containerRef} />
       <div className="legend">
         <strong>Map layers</strong>
+        <div className="row">
+          <span className="swatch sq" style={{ background: "#3987e5", opacity: 0.5 }} />
+          District (shade = case velocity)
+        </div>
         <div className="row">
           <span className="swatch" style={{ background: "#3987e5", opacity: 0.7 }} />
           Individual case (FIR)

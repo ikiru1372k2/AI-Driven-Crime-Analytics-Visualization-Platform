@@ -194,3 +194,23 @@ export const fetchTrends = (
   });
 
 export const fetchOverview = () => getJSON<Overview>("/api/overview");
+
+// --- district choropleth (case velocity) ---
+
+export interface DistrictStat {
+  district_id: string;
+  district_name: string;
+  case_count: number;
+  cases_with_coords: number;
+  recent_count: number;
+  prior_count: number;
+  velocity: number | null; // recent vs prior window ratio; >1 = rising
+}
+
+export interface DistrictsResponse {
+  synthetic: boolean;
+  window_days: number;
+  districts: DistrictStat[];
+}
+
+export const fetchDistricts = () => getJSON<DistrictsResponse>("/api/districts");
