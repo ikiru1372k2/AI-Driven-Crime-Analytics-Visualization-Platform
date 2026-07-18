@@ -26,6 +26,7 @@ import { IdentityReview } from "./IdentityReview";
 import { GraphView, type GraphSeed } from "./GraphView";
 import type { NodeType } from "../lib/graphApi";
 import { readHashState, writeHashState } from "../lib/urlstate";
+import { initialTheme, applyTheme, type Theme } from "../lib/theme";
 import "./styles.css";
 
 const DEFAULT_FILTERS: Filters = { subheadId: null, districtId: null, days: null };
@@ -41,6 +42,11 @@ function parseSeed(raw: string | null): GraphSeed | null {
 export function App() {
   const initial = readHashState();
   const [view, setView] = useState<View>(initial.view);
+  const [theme, setTheme] = useState<Theme>(initialTheme());
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, ...initial.filters });
   const [cases, setCases] = useState<CaseRecord[]>([]);
@@ -136,13 +142,21 @@ export function App() {
         >
           Identities
         </button>
+        <button
+          className="theme-toggle"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+        >
+          {theme === "dark" ? "☀ Light" : "☾ Dark"}
+        </button>
       </nav>
 
       {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
 
       {view === "identities" && <IdentityReview />}
 
-      {view === "graph" && <GraphView seed={graphSeed} onSeed={setGraphSeed} />}
+      {view === "graph" && <GraphView seed={graphSeed} onSeed={setGraphSeed} theme={theme} />}
 
       {view === "map" && (
       <div className="body">
@@ -170,6 +184,7 @@ export function App() {
               alertStationIds={alertStationIds}
               selectedRank={selectedRank}
               onSelectHotspot={onSelectHotspot}
+              theme={theme}
             />
           ) : (
             <div className="map-loading">
