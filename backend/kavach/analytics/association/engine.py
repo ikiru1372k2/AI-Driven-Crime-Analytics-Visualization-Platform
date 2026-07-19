@@ -122,7 +122,7 @@ def _passes_filters(cid: str, row, acc_by_case, vic_by_case, f: dict) -> bool:
 
 
 def find_associations(
-    case_id: int | str, *, focus: str | None = None, limit: int = 40, **filters
+    case_id: int | str, *, focus: str | None = None, limit: int = 40, offset: int = 0, **filters
 ) -> dict:
     """Association graph for a seed case, revealed progressively.
 
@@ -205,8 +205,9 @@ def find_associations(
         aid = sa["accused_id"]
         expandable[f"ACCUSED_RECORD:{aid}"] = len(suspect_by_acc.get(aid, {}))
 
-    # ---- expand one entity into its related cases ----
+    # ---- expand one entity into its related cases (paginated) ----
     assoc_count = 0
+    total_matches = 0
     channel = None
     if focus:
         ftype, fid = focus.split(":", 1)
@@ -214,13 +215,15 @@ def find_associations(
             channel = "same_suspect"
             _, cls, w = _CHANNELS[channel]
             members = suspect_by_acc.get(fid, {})
-            for cid in list(members)[:limit]:
+            ordered = list(members)
+            total_matches = len(ordered)
+            for cid in ordered[offset:offset + limit]:
                 m = members[cid]
                 cn = g.node("CASE", cid, f"Case {cid}")
                 g.node("ACCUSED_RECORD", m["accused_id"], m["name"])
                 g.edge("ACCUSED_IN", "FACT", f"ACCUSED_RECORD:{m['accused_id']}", cn, 1.0, cid)
                 g.edge("SAME_IDENTITY", cls, focus, f"ACCUSED_RECORD:{m['accused_id']}", w, cid)
-            assoc_count = min(len(members), limit)
+            assoc_count = max(0, min(total_matches - offset, limit))
         else:
             channel = {"POLICE_STATION": "same_station", "DISTRICT": "same_district",
                        "CRIME_SUBHEAD": "same_subhead"}.get(ftype)
@@ -228,19 +231,23 @@ def find_associations(
                     "CRIME_SUBHEAD": subhead_cases}.get(ftype, [])
             if channel:
                 rel, cls, w = _CHANNELS[channel]
-                for cid in list(dict.fromkeys(pool))[:limit]:
+                ordered = list(dict.fromkeys(pool))
+                total_matches = len(ordered)
+                for cid in ordered[offset:offset + limit]:
                     cn = g.node("CASE", cid, f"Case {cid}")
                     g.edge(rel, cls, cn, focus, w, cid)
-                assoc_count = min(len(set(pool)), limit)
+                assoc_count = max(0, min(total_matches - offset, limit))
 
     return {
         "synthetic": True,
-        "params": params,
+        "params": {**params, "offset": offset},
         "seed": {"case_id": cid0, "subhead": s["subhead_name"],
                  "station": s["station_name"], "district": s["district_name"]},
         "focus": focus,
         "channel": channel,
         "association_count": assoc_count,
+        "total_matches": total_matches,
+        "offset": offset,
         "total_related": len(set(station_cases) | set(district_cases) | set(subhead_cases)
                              | {c for m in suspect_by_acc.values() for c in m}),
         "expandable": expandable,
