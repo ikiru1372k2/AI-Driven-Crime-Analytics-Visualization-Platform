@@ -27,6 +27,19 @@ mkdir -p "$BUILD"
 cp -r "$ROOT/backend/kavach" "$BUILD/kavach"
 find "$BUILD" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 
+# -- synthetic dataset (~1 MB) -------------------------------------------------
+# The deployed analytics read the generated CSVs through KAVACH_DATA_DIR (the
+# LOCAL adapter). The data is SYNTHETIC by design (ADR-011), so shipping it
+# with the bundle is what makes the hosted demo work; the Data Store adapter
+# replaces this path once the ingestion load (#15) runs against Catalyst.
+if [ -d "$ROOT/data/synthetic" ]; then
+  mkdir -p "$BUILD/data"
+  cp -r "$ROOT/data/synthetic" "$BUILD/data/synthetic"
+else
+  echo "data/synthetic missing — generate it first: python scripts/generate_dataset.py" >&2
+  exit 1
+fi
+
 # -- runtime dependencies from pyproject (single source of truth) ------------
 python3 - "$ROOT/backend/pyproject.toml" > "$BUILD/requirements.txt" <<'PY'
 import sys, tomllib
@@ -36,13 +49,37 @@ print("\n".join(deps))
 print("zcatalyst-sdk>=0.0.10")  # Data Store SDK, AppSail runtime only
 PY
 
+# -- AppSail entrypoint -------------------------------------------------------
+# The startup command is NOT shell-expanded by AppSail: a command containing
+# $X_ZOHO_CATALYST_LISTEN_PORT reaches uvicorn as a literal string and the
+# app 503s with "check the startup command or port". The port is therefore
+# read in Python, from the env var AppSail injects.
+cat > "$BUILD/appsail_main.py" <<'PY'
+"""AppSail entrypoint (CAT-005/#21) — binds uvicorn to the injected port."""
+
+import os
+
+import uvicorn
+
+from kavach.api.main import app
+
+if __name__ == "__main__":
+    port = int(os.environ.get("X_ZOHO_CATALYST_LISTEN_PORT", "9000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+PY
+
 # -- AppSail app config -------------------------------------------------------
+# build_path, stack and command are all REQUIRED by the CLI's config
+# validator (util_modules/config/lib/appsail.js); build_path resolves
+# relative to the staged source dir.
 cat > "$BUILD/app-config.json" <<JSON
 {
-  "command": "python -m uvicorn kavach.api.main:app --host 0.0.0.0 --port \$X_ZOHO_CATALYST_LISTEN_PORT",
-  "stack": "python_3_9",
+  "command": "python3 appsail_main.py",
+  "stack": "${APPSAIL_STACK:-python_3_11}",
+  "build_path": ".",
   "env_variables": {
-    "KAVACH_ENV": "catalyst"
+    "KAVACH_ENV": "catalyst",
+    "KAVACH_DATA_DIR": "data/synthetic"
   },
   "memory": 512
 }
@@ -62,8 +99,34 @@ cat > "$BUILD/catalyst.json" <<JSON
 }
 JSON
 
+# -- vendor dependencies into the bundle --------------------------------------
+# AppSail's Python stack does NOT resolve requirements.txt server-side: the
+# runtime only executes the start command, so an un-vendored bundle deploys
+# "successfully" and then 503s with "check the startup command or port".
+# This mirrors the CLI's own appsail-python template (predeploy: pip install
+# -t ./). Wheels must match the AppSail interpreter, so build for the target
+# platform rather than this VM's.
+echo "vendoring dependencies for ${APPSAIL_STACK:-python_3_11} …"
+python3 -m pip install \
+  --requirement "$BUILD/requirements.txt" \
+  --target "$BUILD" \
+  --upgrade \
+  --quiet \
+  --only-binary=:all: \
+  --platform manylinux2014_x86_64 \
+  --python-version "${APPSAIL_PY_VERSION:-3.11}" \
+  || { echo "dependency vendoring failed" >&2; exit 1; }
+find "$BUILD" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+
 echo "staged $(du -sh "$BUILD" | cut -f1) at $BUILD"
-( cd "$BUILD" && catalyst deploy --org "$CATALYST_ORG_ID" )
+# `catalyst deploy` exits 0 even when it deploys nothing, so assert on its
+# output rather than trusting the exit code (observed on a real failed run).
+deploy_log="$BUILD/deploy.log"
+( cd "$BUILD" && catalyst deploy --org "$CATALYST_ORG_ID" ) 2>&1 | tee "$deploy_log"
+if grep -qiE "No components deployed|deploy skipped|Invalid AppSail" "$deploy_log"; then
+  echo "DEPLOY FAILED — see $deploy_log" >&2
+  exit 1
+fi
 
 echo "deployed. verify:"
 echo "  curl https://<appsail-url>/health"

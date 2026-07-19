@@ -20,7 +20,10 @@ command -v catalyst >/dev/null || { echo "zcatalyst-cli not installed (npm i -g 
 : "${VITE_API_BASE:?set VITE_API_BASE to the Catalyst API Gateway base URL}"
 
 # -- build with the gateway base URL baked in ---------------------------------
-( cd "$ROOT/frontend" && npm ci && VITE_API_BASE="$VITE_API_BASE" npm run build )
+# --base ./ is required: Catalyst Web Client Hosting serves the app under
+# /app/, so Vite's default absolute /assets/... URLs 404 (and the CSS comes
+# back as the hosting 404 JSON, tripping strict MIME checking).
+( cd "$ROOT/frontend" && npm ci && VITE_API_BASE="$VITE_API_BASE" npx vite build --base ./ )
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
