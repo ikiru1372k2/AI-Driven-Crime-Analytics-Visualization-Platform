@@ -22,13 +22,34 @@ session state; recreate with `catalyst init --project 42171000000017001
 | Service | Status | Evidence |
 |---|---|---|
 | CLI auth / project list | VERIFIED | `catalyst whoami`, `project:list` show AI-KSP |
-| Data Store (API reachability) | VERIFIED | `ds:export` + admin `GET /table` succeed (0 tables — provisioning is #18) |
+| **Data Store** | **VERIFIED (provisioned)** | 30 tables live; `--verify` → 30 ok / 0 absent / 0 drifted (#18) |
+| **AppSail** | **VERIFIED (deployed)** | `kavach-analytics` serving; `/health` 200, full scientific stack imports in-cloud (#21) |
+| **Web Client Hosting** | **VERIFIED (deployed)** | `kavach-console` serving the React console; zero console errors (#22) |
 | API Gateway | AVAILABLE (disabled) | `apig:status` → DISABLED; enable via `apig:enable` (#20) |
-| AppSail build stacks | AVAILABLE | CLI config lists python3_9/3_10/3_11, node12–24 |
 | IaC export/import | VERIFIED | `iac:export` produced project template zip |
 | CLI token (`token:generate`) | LIMITED | device-flow verification must be completed by the **same Zoho account as the CLI login**; needed only for CI (`CATALYST_TOKEN` env is supported by the CLI) |
-| Table admin API via CLI session | VERIFIED | authenticated `GET /baas/v1/project/{id}/table` returns success |
+| Catalyst SDK in AppSail | LIMITED | `zcatalyst_sdk.initialize(req=headers)` needs Catalyst headers, which are absent on direct AppSail URLs — they arrive via the authenticated path (#19/#20). Analytics use the bundled dataset meanwhile. |
 | NoSQL / QuickML / Signals / Circuits / Cron / Push / Auth | PENDING | probed during their issues (#39/#38/#71/#72/#73/#74/#19) |
+
+## Live URLs
+
+| Tier | URL |
+|---|---|
+| Console (Web Client) | https://ai-ksp-60078928452.development.catalystserverless.in/app/index.html |
+| Analytics API (AppSail) | https://kavach-analytics-50044141253.development.catalystappsail.in |
+
+Verified in-cloud: `/health` 200 · `/health/deps` → numpy 2.2.6, pandas 2.3.2,
+sklearn 1.7.2, networkx 3.6.1 · `/api/meta` 2,236 cases · `/api/hotspots`,
+`/api/trends`, `/api/overview` 200 · console renders live data, no console errors.
+
+## Deployment gotchas (each cost a failed deploy — see #21/#22 commit)
+
+1. `app-config.json` **must** carry `build_path`; the CLI validator rejects it otherwise.
+2. Stack is `python_3_11` (underscored), not `python3.11`.
+3. AppSail does **not** install `requirements.txt` — dependencies must be vendored into the bundle.
+4. The startup command is **not** shell-expanded; `$X_ZOHO_CATALYST_LISTEN_PORT` must be read in code.
+5. Web Client serves under `/app/` — build the SPA with `--base ./`.
+6. `catalyst deploy` exits 0 even when it deploys nothing; assert on its output.
 
 ## Provisioning auth path (no separate token required)
 
