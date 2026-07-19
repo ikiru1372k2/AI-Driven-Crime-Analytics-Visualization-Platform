@@ -48,6 +48,19 @@ app.include_router(audit_router)
 app.include_router(evidence_router)
 
 
+@app.on_event("startup")
+def _seed_dev_auth() -> None:
+    """Local dev only: seed the demo role assignments so header-based dev
+    identities (x-kavach-dev-user) resolve to a role + scope. Gated on the same
+    explicit opt-in as DevValidator, so it never runs in a Catalyst runtime."""
+    from kavach.auth import role_repo
+    from kavach.auth.demo_users import seed_demo_assignments
+    from kavach.auth.validator import is_catalyst_runtime
+
+    if os.environ.get("KAVACH_DEV_AUTH") == "1" and not is_catalyst_runtime():
+        seed_demo_assignments(role_repo())
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": __version__}

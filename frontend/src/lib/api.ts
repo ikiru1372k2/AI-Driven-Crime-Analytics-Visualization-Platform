@@ -95,12 +95,23 @@ export interface Filters {
   days: number | null; // recency window, null = full range
 }
 
+/**
+ * Local dev only: the API's graph/evidence routes are behind Catalyst auth, so
+ * send a seeded dev identity (see backend demo_users) to resolve a role + scope.
+ * Never emitted in production builds — there the Catalyst session supplies the
+ * real auth headers, and the backend only honours this header when
+ * KAVACH_DEV_AUTH=1 in a non-Catalyst runtime.
+ */
+export const DEV_AUTH_HEADERS: Record<string, string> = import.meta.env.DEV
+  ? { "x-kavach-dev-user": (import.meta.env.VITE_DEV_USER as string) || "demo-state-analyst" }
+  : {};
+
 async function getJSON<T>(path: string, params: Record<string, unknown> = {}): Promise<T> {
   const url = new URL(API_BASE + path);
   for (const [k, v] of Object.entries(params)) {
     if (v !== null && v !== undefined && v !== "") url.searchParams.set(k, String(v));
   }
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), { headers: DEV_AUTH_HEADERS });
   if (!res.ok) throw new Error(`${path} → ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }

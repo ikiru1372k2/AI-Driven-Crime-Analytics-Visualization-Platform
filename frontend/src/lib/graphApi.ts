@@ -3,7 +3,7 @@
  * Every edge carries provenance (evidence_case_id, derivation,
  * classification); every response carries the #25 intelligence envelope.
  */
-import { API_BASE } from "./api";
+import { API_BASE, DEV_AUTH_HEADERS } from "./api";
 
 export type NodeType =
   | "CASE"
@@ -94,7 +94,7 @@ export interface ClassificationInfo {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, { headers: DEV_AUTH_HEADERS });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.detail ?? `HTTP ${res.status}`);

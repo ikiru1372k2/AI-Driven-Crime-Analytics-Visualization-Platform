@@ -2,7 +2,7 @@
  * Client for the Evidence & Provenance browser + persisted decisions
  * (design review 1h — any AI output → method → source FIRs → audit trail).
  */
-import { API_BASE } from "./api";
+import { API_BASE, DEV_AUTH_HEADERS } from "./api";
 
 export interface EvidenceRun {
   run_id: string;
@@ -50,7 +50,7 @@ export interface ActivityEntry {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, { headers: DEV_AUTH_HEADERS });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -74,7 +74,7 @@ export async function postDecision(body: {
 }): Promise<void> {
   const res = await fetch(`${API_BASE}/api/v1/decisions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...DEV_AUTH_HEADERS },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
