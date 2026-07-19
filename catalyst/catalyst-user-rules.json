@@ -1,0 +1,28 @@
+[
+  {
+    "name": "kavach_api",
+    "source_endpoint": "/api/{path1:(.*)}",
+    "target_endpoint": "/api/{path1}",
+    "target": "appsail",
+    "target_id": "kavach-analytics",
+    "method": "ANY",
+    "status": true,
+    "throttling": {
+      "overall": { "limit": 600, "period": "MINUTE" },
+      "ip": { "limit": 120, "period": "MINUTE" }
+    }
+  },
+  {
+    "name": "kavach_health",
+    "source_endpoint": "/health{path1:(.*)}",
+    "target_endpoint": "/health{path1}",
+    "target": "appsail",
+    "target_id": "kavach-analytics",
+    "method": "GET",
+    "status": true,
+    "throttling": {
+      "overall": { "limit": 120, "period": "MINUTE" },
+      "ip": { "limit": 30, "period": "MINUTE" }
+    }
+  }
+]
