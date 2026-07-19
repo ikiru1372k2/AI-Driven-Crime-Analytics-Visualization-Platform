@@ -135,7 +135,10 @@ export interface AssociationResult {
   seed: { case_id: string; subhead: string; station: string; district: string } | null;
   focus: string | null;
   channel: string | null;
+  /** cases on THIS page (association_count) out of total_matches for the focus. */
   association_count: number;
+  total_matches: number;
+  offset: number;
   total_related: number;
   /** node_id -> number of related cases reachable by expanding it (overview hint). */
   expandable: Record<string, number>;
@@ -154,9 +157,14 @@ export function fetchAssociations(
   caseId: string,
   filters: AssocFilters = {},
   focus?: string,
+  page?: { limit: number; offset: number },
 ): Promise<AssociationResult> {
   const p = new URLSearchParams({ case_id: caseId });
   if (focus) p.set("focus", focus);
+  if (page) {
+    p.set("limit", String(page.limit));
+    p.set("offset", String(page.offset));
+  }
   for (const [k, v] of Object.entries(filters)) {
     if (v !== undefined && v !== null && v !== "") p.set(k, String(v));
   }

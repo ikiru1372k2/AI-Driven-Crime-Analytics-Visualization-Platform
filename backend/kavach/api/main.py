@@ -23,11 +23,16 @@ app = FastAPI(
 
 # Local dev: the Vite frontend runs on a separate origin. Vite falls through to
 # the next free port (5173, 5174, …) when one is taken, so allow any localhost
-# port for the dev path. Hosted (CAT-006): the Web Client origin is allowed via
-# KAVACH_ALLOWED_ORIGINS (comma-separated env, set on AppSail — never in repo).
+# port for the dev path. Hosted: the Catalyst-served Web Client origin
+# (*.catalystserverless.in) is allowed by regex so the deployed app never hits a
+# CORS wall even if KAVACH_ALLOWED_ORIGINS (comma-separated env, set on AppSail)
+# is unset; extra explicit origins can still be added through that env.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origin_regex=(
+        r"http://(localhost|127\.0\.0\.1):\d+"
+        r"|https://[a-z0-9.-]+\.catalystserverless\.in"
+    ),
     allow_origins=[
         o.strip()
         for o in os.environ.get("KAVACH_ALLOWED_ORIGINS", "").split(",")

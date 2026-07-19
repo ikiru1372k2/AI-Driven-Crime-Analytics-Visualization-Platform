@@ -131,7 +131,8 @@ def get_associations(
         description="expand one entity: 'TYPE:id' (e.g. DISTRICT:44, ACCUSED_RECORD:2238). "
         "Omit for the overview (seed + its entities).",
     ),
-    limit: int = Query(default=40, ge=1, le=150),
+    limit: int = Query(default=60, ge=1, le=5000, description="page size for an expansion"),
+    offset: int = Query(default=0, ge=0, description="page offset into the related cases"),
     subhead_id: int | None = Query(default=None, description="filter: crime sub-head"),
     district_id: int | None = Query(default=None, description="filter: district"),
     station_id: int | None = Query(default=None, description="filter: police station"),
@@ -149,6 +150,7 @@ def get_associations(
         case_id,
         focus=focus,
         limit=limit,
+        offset=offset,
         subhead_id=subhead_id,
         district_id=district_id,
         station_id=station_id,

@@ -1252,6 +1252,61 @@ select:focus-visible {
   border-color: var(--series-1);
 }
 
+/* ---- association graph: stats bar (top-centre) + pager (bottom-centre) ---- */
+.graph-stats {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  background: var(--overlay);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 0.35rem 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.graph-pager {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--overlay);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.76rem;
+  color: var(--ink-2);
+}
+.graph-pager button {
+  font: inherit;
+  background: none;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--ink-2);
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+.graph-pager button:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--series-1);
+}
+.graph-pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ---- association graph: floating "info / details" button ---- */
 .graph-info-btn {
   position: absolute;

@@ -40,6 +40,10 @@ export interface GraphSeed {
   id: string;
 }
 
+/** Related cases per expansion page — keeps the graph readable and instant to
+ *  render even when an entity has hundreds of cases; page through the rest. */
+const PAGE_SIZE = 60;
+
 interface Props {
   seed: GraphSeed | null;
   onSeed: (s: GraphSeed) => void;
@@ -64,6 +68,11 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [expandable, setExpandable] = useState<Record<string, number>>({});
   // whether we've drilled into an entity (View belongs to the overview only)
   const [drilled, setDrilled] = useState(false);
+  // pagination of an expansion's related cases (a district can have hundreds)
+  const [page, setPage] = useState(0);
+  const [pageInfo, setPageInfo] = useState<{ total: number; offset: number; count: number } | null>(
+    null,
+  );
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -153,52 +162,26 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     [],
   );
 
-  // Expand one entity of a CASE-seeded overview into its related cases
-  // (server-side, via ?focus=TYPE:id), merged into the current graph.
-  const loadFocus = useCallback(async (focus: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const a = await fetchAssociations(seedRef.current.id, filtersRef.current, focus);
-      if (a.expandable) setExpandable((prev) => ({ ...prev, ...a.expandable }));
-      setResultCount(a.association_count); // cases revealed in this expansion (filterable)
-      setMerged((prev) => {
-        const nodes = new Map(prev.nodes);
-        const edges = new Map(prev.edges);
-        a.nodes.forEach((n) => nodes.set(n.node_id, n));
-        a.edges.forEach((e) => edges.set(e.edge_id, e));
-        return { nodes, edges };
-      });
-    } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Re-apply the current attribute filters to whatever has been expanded:
-  // rebuild the overview base (seed + its entities, unfiltered) and re-expand
-  // every drilled entity WITH the filters. Filter lives at the expanded level —
-  // "show all cases in this district, then narrow them".
-  const reloadExpansionsFiltered = useCallback(async () => {
-    // Filter narrows the CURRENT expansion only (the entity you last opened),
-    // not everything ever expanded — otherwise filtering a station's cases
-    // would also drag in a previously-opened district's cases.
-    const focus = activeFocusRef.current;
-    if (!focus) return;
+  // Show ONE entity's expansion as a self-contained view: the focus entity, the
+  // seed case, and all the related cases (every case, no cap-driven truncation),
+  // narrowed by the current filters. It REPLACES the graph (Back returns to the
+  // overview) so the previous view isn't left behind, and drops the seed's other
+  // sibling entities so it's exactly "this entity and its cases, nothing else".
+  const showFocus = useCallback(async (focus: string, pg = 0) => {
     setLoading(true);
     setError(null);
     try {
       const id = seedRef.current.id;
-      const ex = await fetchAssociations(id, filtersRef.current, focus);
+      const ex = await fetchAssociations(id, filtersRef.current, focus, {
+        limit: PAGE_SIZE,
+        offset: pg * PAGE_SIZE,
+      });
       setExpandable(ex.expandable ?? {});
-      // Show ONLY what the filter matched: the seed case, the focus entity and
-      // the matching related cases (plus the identity chain for an accused
-      // focus). Drop the seed's other sibling entities so the view is exactly
-      // "the cases that passed the filter", nothing else.
       const isAccused = focus.startsWith("ACCUSED_RECORD:");
+      const seedNodeId = `CASE:${id}`;
       const keep = (n: GraphNode) =>
         n.node_id === focus ||
+        n.node_id === seedNodeId ||
         n.node_type === "CASE" ||
         (isAccused && n.node_type === "ACCUSED_RECORD");
       const nodes = new Map<string, GraphNode>();
@@ -209,17 +192,30 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       ex.edges.forEach((e) => {
         if (nodes.has(e.source) && nodes.has(e.target)) edges.set(e.edge_id, e);
       });
-      setResultCount(ex.association_count);
-      setMerged({ nodes, edges });
-      // collapse the others back to badges; only the filtered focus stays open
+      setResultCount(ex.total_matches);
+      setPage(pg);
+      setPageInfo({ total: ex.total_matches, offset: ex.offset, count: ex.association_count });
+      setMerged({ nodes, edges }); // REPLACE — not merged onto the overview
       expandedRef.current = new Set([focus]);
-      setFocusId(null); // a filter acts on the whole expansion — show it all, not one cluster
+      setFocusId(null); // whole view is the expansion → fit it, no cluster dimming
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Applying a Filter re-runs the current expansion from the first page.
+  const reloadExpansionsFiltered = useCallback(async () => {
+    if (activeFocusRef.current) await showFocus(activeFocusRef.current, 0);
+  }, [showFocus]);
+  // page through a large expansion
+  const gotoPage = useCallback(
+    (pg: number) => {
+      if (activeFocusRef.current) void showFocus(activeFocusRef.current, pg);
+    },
+    [showFocus],
+  );
 
   // seed from URL/props, else bootstrap from the sample case (its accused is
   // "Ravi Kumar" — the same fragmented identity shown on the Identities tab)
@@ -230,6 +226,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       expandedRef.current.clear(); // fresh seed = fresh graph
       activeFocusRef.current = null;
       setDrilled(false); // back to the overview → View control returns
+      setPageInfo(null);
       setFocusId(null); // drop any prior zoom-to-cluster so the new seed shows in full
       firstFilter.current = true; // don't let a reset fire the filter effect
       setFilters({}); // filters belong to an expansion; the overview starts clean
@@ -273,14 +270,14 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         void load(type, id, true); // non-CASE seed → base subgraph
         return;
       }
-      // A fresh expansion shows ALL of the entity's cases; the user narrows them
-      // afterwards with Filter. Clear any filter left over from a prior expansion.
+      // A fresh expansion shows all of the entity's cases (paged); the user
+      // narrows them with Filter. Clear any filter left over from a prior one.
       filtersRef.current = {};
       firstFilter.current = true; // we load below; don't double-fire the filter effect
       setFilters({});
-      void loadFocus(key);
+      void showFocus(key, 0);
     },
-    [snapshot, load, loadFocus],
+    [snapshot, load, showFocus],
   );
 
   // Applying a Filter narrows the cases in whatever you've expanded (Filter
@@ -313,6 +310,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         setDrilled(false);
         expandedRef.current.clear();
         activeFocusRef.current = null;
+        setPageInfo(null);
         firstFilter.current = true;
         setFilters({}); // back at the overview → clear the expansion-level filter
       }
@@ -465,6 +463,10 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   }, [focusId, merged]);
 
   const stubs = subgraph?.stubs;
+  // label of the entity currently expanded (for the stats bar)
+  const focusLabel = activeFocusRef.current
+    ? merged.nodes.get(activeFocusRef.current)?.label ?? ""
+    : "";
 
   return (
     <div className="body graph-body">
@@ -503,6 +505,15 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           onApplyFilters={setFilters}
           resultCount={resultCount}
         />
+        {drilled && pageInfo && (
+          <div className="graph-stats" role="status">
+            {focusLabel ? `${focusLabel} · ` : ""}
+            {pageInfo.total} case{pageInfo.total === 1 ? "" : "s"}
+            {pageInfo.total > PAGE_SIZE
+              ? ` (showing ${pageInfo.offset + 1}–${pageInfo.offset + pageInfo.count})`
+              : ""}
+          </div>
+        )}
         {hover && (
           <div
             className="graph-tooltip"
@@ -521,6 +532,23 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           </div>
         )}
         <div ref={containerRef} className="graph-canvas" aria-label="Association graph canvas" />
+
+        {drilled && pageInfo && pageInfo.total > PAGE_SIZE && (
+          <div className="graph-pager" role="navigation" aria-label="Case pages">
+            <button disabled={page === 0 || loading} onClick={() => gotoPage(page - 1)}>
+              &#8249; Prev
+            </button>
+            <span>
+              Page {page + 1} / {Math.ceil(pageInfo.total / PAGE_SIZE)}
+            </span>
+            <button
+              disabled={(page + 1) * PAGE_SIZE >= pageInfo.total || loading}
+              onClick={() => gotoPage(page + 1)}
+            >
+              Next &#8250;
+            </button>
+          </div>
+        )}
 
         {showDetail && (
           <GraphDetailPanel
