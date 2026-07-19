@@ -2,7 +2,7 @@
 
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from kavach import __version__
@@ -61,26 +61,28 @@ def health_deps() -> dict:
 
 
 @app.get("/health/datastore")
-def health_datastore() -> dict:
+def health_datastore(request: Request) -> dict:
     """Sample scoped Data Store query from the deployed runtime (CAT-005).
 
     Local/dev (no Catalyst env): reports "unconfigured" honestly — there is
-    no fake integration. On AppSail with project env + SDK present it runs
-    one scoped ZCQL row count against CaseMaster.
+    no fake integration. On AppSail the SDK is initialized with the incoming
+    request's Catalyst headers (it has no ambient credential; initializing
+    without them fails with "Catalyst headers are empty"), then runs one
+    scoped ZCQL row count against CaseMaster.
     """
-    from kavach.config import settings
+    import os
 
-    if not settings.catalyst_project_id:
+    if not (os.environ.get("CATALYST_PROJECT_ID") or os.environ.get("KAVACH_ENV") == "catalyst"):
         return {
             "status": "unconfigured",
-            "detail": "CATALYST_PROJECT_ID not set — local mode (dev fixture)",
+            "detail": "not running on Catalyst — local mode (dev fixture)",
         }
     try:
         import zcatalyst_sdk  # type: ignore[import-not-found]
     except ImportError:
         return {"status": "error", "detail": "zcatalyst-sdk not installed in runtime"}
     try:
-        catalyst_app = zcatalyst_sdk.initialize()
+        catalyst_app = zcatalyst_sdk.initialize(req=dict(request.headers))
         rows = catalyst_app.zcql().execute_query(
             "SELECT COUNT(ROWID) FROM CaseMaster"
         )

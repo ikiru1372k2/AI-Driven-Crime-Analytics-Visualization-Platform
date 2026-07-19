@@ -1,0 +1,132 @@
+name: Deploy to Catalyst
+
+# Auto-deploy on green main (CAT/#84). Runs only after CI passes, so a
+# failing test never reaches the judged demo URLs.
+#
+# Requires one repository secret — CATALYST_TOKEN — minted with
+# `catalyst token:generate` (the device-code verification MUST be completed
+# by the same Zoho account the CLI is logged in as). Project/org ids are
+# identifiers, not secrets (they are recorded in docs/catalyst/project.md);
+# they are read from repository *variables* with a documented fallback.
+#
+# Until the secret exists this workflow skips cleanly instead of failing —
+# a red main on a missing credential would be noise, not signal.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: # manual redeploy without a push
+
+concurrency:
+  group: catalyst-deploy
+  cancel-in-progress: false # never interrupt a half-finished deploy
+
+jobs:
+  deploy:
+    # workflow_run fires regardless of outcome; deploy only on success.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
+      CATALYST_PROJECT_ID: ${{ vars.CATALYST_PROJECT_ID || '42171000000017001' }}
+      CATALYST_ORG_ID: ${{ vars.CATALYST_ORG_ID || '60078928452' }}
+      APPSAIL_URL: ${{ vars.APPSAIL_URL || 'https://kavach-analytics-50044141253.development.catalystappsail.in' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # deploy exactly the commit CI validated, not whatever main
+          # has drifted to since the run started
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Check deploy credentials
+        id: guard
+        run: |
+          if [ -z "$CATALYST_TOKEN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deploy skipped::CATALYST_TOKEN secret is not set — see issue #84"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.configured == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.configured == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Catalyst CLI
+        if: steps.guard.outputs.configured == 'true'
+        run: npm i -g zcatalyst-cli
+
+      - name: Install backend package
+        if: steps.guard.outputs.configured == 'true'
+        run: pip install -e "backend/[dev]"
+
+      - name: Generate synthetic dataset
+        if: steps.guard.outputs.configured == 'true'
+        # data/synthetic is gitignored; regenerated deterministically from a
+        # fixed seed (ADR-011) so the deployed demo data is reproducible.
+        run: PYTHONPATH=backend python scripts/generate_dataset.py
+
+      - name: Prepare Catalyst app directory
+        if: steps.guard.outputs.configured == 'true'
+        # the API bridge and CLI both require a directory containing
+        # catalyst.json; the runner has no `catalyst login` state, so the
+        # CLI authenticates from $CATALYST_TOKEN instead.
+        run: |
+          mkdir -p .catalyst-app
+          printf '{\n  "project_id": %s,\n  "project_name": "AI-KSP"\n}\n' \
+            "$CATALYST_PROJECT_ID" > .catalyst-app/catalyst.json
+
+      - name: Verify Data Store schema parity
+        if: steps.guard.outputs.configured == 'true'
+        # fails the deploy if the live schema drifted from the manifest —
+        # never ships code against an unexpected schema.
+        run: |
+          python scripts/catalyst/provision_datastore.py \
+            --via-cli "$PWD/.catalyst-app" \
+            --project-id "$CATALYST_PROJECT_ID" \
+            --verify
+
+      - name: Deploy backend (AppSail)
+        if: steps.guard.outputs.configured == 'true'
+        run: bash scripts/catalyst/deploy_backend.sh
+
+      - name: Deploy frontend (Web Client Hosting)
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          VITE_API_BASE: ${{ vars.APPSAIL_URL || 'https://kavach-analytics-50044141253.development.catalystappsail.in' }}
+        run: bash scripts/catalyst/deploy_frontend.sh
+
+      - name: Smoke-test the deployment
+        if: steps.guard.outputs.configured == 'true'
+        # a "successful" deploy that 503s is the failure mode this catches
+        # (see the vendoring / startup-command gotchas in #21).
+        run: |
+          set -e
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -s -m 45 -o /tmp/health.json -w '%{http_code}' "$APPSAIL_URL/health" || true)
+            [ "$code" = "200" ] && break
+            echo "attempt $attempt: HTTP $code — retrying"
+            sleep 20
+          done
+          [ "$code" = "200" ] || { echo "backend unhealthy after deploy"; cat /tmp/health.json; exit 1; }
+          echo "health: $(cat /tmp/health.json)"
+
+          deps=$(curl -s -m 90 "$APPSAIL_URL/health/deps")
+          echo "deps: $deps"
+          echo "$deps" | grep -q '"numpy"' || { echo "scientific stack missing"; exit 1; }
+
+          meta_code=$(curl -s -m 120 -o /tmp/meta.json -w '%{http_code}' "$APPSAIL_URL/api/meta")
+          [ "$meta_code" = "200" ] || { echo "analytics API failed: $meta_code"; exit 1; }
+          echo "analytics API serving: $(head -c 120 /tmp/meta.json)"

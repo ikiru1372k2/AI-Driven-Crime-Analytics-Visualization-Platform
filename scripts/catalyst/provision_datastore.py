@@ -28,7 +28,9 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +54,15 @@ TYPE_MAP = {
 
 #: Catalyst system columns present on every table — excluded from parity.
 SYSTEM_COLUMNS = {"ROWID", "CREATORID", "CREATEDTIME", "MODIFIEDTIME"}
+
+#: Catalyst requires an explicit length for varchar; other types size
+#: themselves (verified against the live API — see the probe log in #17).
+VARCHAR_LENGTH = 255
+
+#: The admin API intermittently 500s under a burst of schema writes.
+RETRY_ATTEMPTS = 4
+RETRY_BACKOFF_S = 5
+TRANSIENT_ERRORS = ("HTTP Error: 500", "HTTP Error: 502", "HTTP Error: 503")
 
 #: Derived intelligence tables (docs/schema/derived-intelligence-schema.md).
 #: Only tables implemented by landed code are provisioned; engine result
@@ -207,9 +218,106 @@ def diff_plan(
     return to_create, ok, drift
 
 
+def column_payload(spec: TableSpec) -> list[dict]:
+    """Column-creation body: a JSON array; varchar carries max_length."""
+    out = []
+    for c in spec.columns:
+        col: dict = {"column_name": c.name, "data_type": c.catalyst_type}
+        if c.catalyst_type == "varchar":
+            col["max_length"] = VARCHAR_LENGTH
+        out.append(col)
+    return out
+
+
+# -- transports ---------------------------------------------------------------
+class DataStoreAdmin:
+    """Data Store admin operations, independent of how requests are sent."""
+
+    def _request(self, method: str, path: str, body: dict | list | None = None) -> dict:
+        raise NotImplementedError
+
+    def table_index(self) -> dict[str, dict]:
+        """Existing table → {"table_id": …, "columns": [names]}."""
+        data = self._request("GET", "/table").get("data", [])
+        out: dict[str, dict] = {}
+        for t in data:
+            cols = self._request("GET", f"/table/{t['table_id']}/column").get("data", [])
+            out[t["table_name"]] = {
+                "table_id": t["table_id"],
+                "columns": [c["column_name"] for c in cols],
+            }
+        return out
+
+    def list_tables(self) -> dict[str, list[str]]:
+        """Existing table → physical column names."""
+        return {name: info["columns"] for name, info in self.table_index().items()}
+
+    def create_table(self, spec: TableSpec) -> None:
+        """Create the table, then add its columns.
+
+        The Data Store admin API is two-step (verified against the live API):
+        POST /table accepts ONLY {"table_name": …} — passing column_details
+        there is rejected — and columns are added by POSTing a JSON *array*
+        to /table/{id}/column. varchar requires an explicit max_length.
+        """
+        created = self._request("POST", "/table", {"table_name": spec.name})
+        self.add_columns(created["data"]["table_id"], column_payload(spec))
+
+    def add_columns(self, table_id: str, columns: list[dict]) -> None:
+        """Add columns to an existing table (non-destructive: never drops)."""
+        if columns:
+            self._request("POST", f"/table/{table_id}/column", columns)
+
+
+class CliSessionClient(DataStoreAdmin):
+    """Admin client over the logged-in CLI session (scripts/catalyst/catalyst_api.js).
+
+    Preferred on a developer VM: `catalyst login` is already done, so no
+    OAuth token has to be minted, stored or committed. In CI the same
+    bridge picks up CATALYST_TOKEN (see #84).
+    """
+
+    def __init__(self, project_id: str, app_dir: str) -> None:
+        self.project_id = project_id
+        self.app_dir = app_dir
+        self.bridge = str(Path(__file__).parent / "catalyst_api.js")
+
+    def _request(self, method: str, path: str, body: dict | list | None = None) -> dict:
+        """Send one admin request, retrying transient 5xx failures.
+
+        The Data Store admin API intermittently returns 500 under a burst of
+        schema writes; the operation is retried with backoff rather than
+        aborting a 30-table run half-way.
+        """
+        cmd = ["node", self.bridge, method, f"/baas/v1/project/{self.project_id}{path}"]
+        if body is not None:
+            cmd.append(json.dumps(body))
+        last = ""
+        for attempt in range(RETRY_ATTEMPTS):
+            proc = subprocess.run(  # noqa: S603 — fixed argv, no shell
+                cmd, capture_output=True, text=True, cwd=self.app_dir, timeout=180
+            )
+            try:
+                payload = json.loads(proc.stdout.strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                raise SystemExit(
+                    f"catalyst bridge failed ({method} {path}): {proc.stdout}{proc.stderr}"
+                ) from None
+            if "error" not in payload:
+                return payload["body"]
+            last = payload["error"]
+            if not any(code in last for code in TRANSIENT_ERRORS):
+                raise SystemExit(f"catalyst API error ({method} {path}): {last}")
+            if attempt < RETRY_ATTEMPTS - 1:
+                delay = RETRY_BACKOFF_S * (attempt + 1)
+                print(f"  transient error, retrying in {delay}s ({last})", file=sys.stderr)
+                time.sleep(delay)
+        raise SystemExit(f"catalyst API error after {RETRY_ATTEMPTS} attempts: {last}")
+
+
 # -- Catalyst REST client ----------------------------------------------------
-class CatalystClient:
-    """Thin Data Store admin client (table list/create) over urllib."""
+class CatalystClient(DataStoreAdmin):
+    """Thin Data Store admin client over urllib (token-authenticated path)."""
 
     def __init__(self) -> None:
         self.base = os.environ.get("CATALYST_API_BASE", "https://api.catalyst.zoho.in")
@@ -245,34 +353,30 @@ class CatalystClient:
         with urllib.request.urlopen(req) as resp:  # noqa: S310 — https API host
             return json.loads(resp.read().decode())
 
-    def list_tables(self) -> dict[str, list[str]]:
-        """Existing table → physical column names."""
-        data = self._request("GET", "/table").get("data", [])
-        out: dict[str, list[str]] = {}
-        for t in data:
-            cols = self._request("GET", f"/table/{t['table_id']}/column").get("data", [])
-            out[t["table_name"]] = [c["column_name"] for c in cols]
-        return out
-
-    def create_table(self, spec: TableSpec) -> None:
-        self._request(
-            "POST",
-            "/table",
-            {
-                "table_name": spec.name,
-                "column_details": [
-                    {"column_name": c.name, "data_type": c.catalyst_type}
-                    for c in spec.columns
-                ],
-            },
-        )
-
 
 # -- CLI ----------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true", help="print the plan; no API calls")
     ap.add_argument("--verify", action="store_true", help="parity check only; create nothing")
+    ap.add_argument(
+        "--repair",
+        action="store_true",
+        help="additively add missing columns to existing tables (completes a "
+        "partially-created table); never drops, retypes, or touches tables "
+        "that have unexpected columns",
+    )
+    ap.add_argument(
+        "--via-cli",
+        metavar="APP_DIR",
+        help="authenticate through the logged-in Catalyst CLI session instead of "
+        "CATALYST_OAUTH_TOKEN; APP_DIR is a directory containing catalyst.json",
+    )
+    ap.add_argument(
+        "--project-id",
+        default=os.environ.get("CATALYST_PROJECT_ID"),
+        help="Catalyst project id (defaults to $CATALYST_PROJECT_ID); required with --via-cli",
+    )
     args = ap.parse_args(argv)
 
     plan = build_plan()
@@ -287,23 +391,59 @@ def main(argv: list[str] | None = None) -> int:
                   + ", ".join(f"{c.name}:{c.catalyst_type}" for c in spec.columns))
         return 0
 
-    client = CatalystClient()
-    existing = client.list_tables()
+    client: DataStoreAdmin
+    if args.via_cli:
+        if not args.project_id:
+            raise SystemExit("--via-cli requires --project-id (or $CATALYST_PROJECT_ID)")
+        client = CliSessionClient(args.project_id, args.via_cli)
+    else:
+        client = CatalystClient()
+    index = client.table_index()
+    existing = {name: info["columns"] for name, info in index.items()}
     to_create, ok, drift = diff_plan(plan, existing)
 
     for table, d in drift.items():
-        print(f"DRIFT {table}: missing={d['missing']} unexpected={d['unexpected']}"
-              " — refusing to alter; reconcile manually", file=sys.stderr)
+        additive = bool(d["missing"]) and not d["unexpected"]
+        if additive and args.repair:
+            note = " — repairing (additive)"
+        elif additive:
+            note = " — run --repair to add the missing columns"
+        else:
+            note = " — refusing to alter; reconcile manually"
+        print(
+            f"DRIFT {table}: missing={d['missing']} unexpected={d['unexpected']}{note}",
+            file=sys.stderr,
+        )
 
     if args.verify:
         print(f"parity: {len(ok)} ok, {len(to_create)} absent, {len(drift)} drifted")
         return 1 if (drift or to_create) else 0
 
+    by_name = {t.name: t for t in plan}
+    repaired = 0
+    if args.repair:
+        # Additive repair only: completes tables left partial by an
+        # interrupted run. Columns are never dropped or retyped, and tables
+        # with unexpected columns are still left alone (CAT-002 rule).
+        for table, d in drift.items():
+            if d["unexpected"] or not d["missing"]:
+                continue
+            spec = by_name[table]
+            missing = set(d["missing"])
+            cols = [c for c in column_payload(spec) if c["column_name"] in missing]
+            print(f"repairing {table} (+{len(cols)} columns)")
+            client.add_columns(index[table]["table_id"], cols)
+            repaired += 1
+
     for spec in to_create:
         print(f"creating {spec.name} ({len(spec.columns)} columns)")
         client.create_table(spec)
-    print(f"done: created {len(to_create)}, unchanged {len(ok)}, drift {len(drift)}")
-    return 1 if drift else 0
+    unresolved = len(drift) - repaired
+    print(
+        f"done: created {len(to_create)}, repaired {repaired}, "
+        f"unchanged {len(ok)}, drift {unresolved}"
+    )
+    return 1 if unresolved else 0
 
 
 if __name__ == "__main__":
