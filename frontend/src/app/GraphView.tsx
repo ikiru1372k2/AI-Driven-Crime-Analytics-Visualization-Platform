@@ -269,10 +269,16 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       expandedRef.current.add(key);
       setDrilled(true); // we've left the overview → hide the View control
       snapshot();
-      // In an association (CASE-seeded) view, expand the entity into its related
-      // cases via the association engine; otherwise fall back to the base subgraph.
-      if (seedRef.current.type === "CASE") void loadFocus(key);
-      else void load(type, id, true);
+      if (seedRef.current.type !== "CASE") {
+        void load(type, id, true); // non-CASE seed → base subgraph
+        return;
+      }
+      // A fresh expansion shows ALL of the entity's cases; the user narrows them
+      // afterwards with Filter. Clear any filter left over from a prior expansion.
+      filtersRef.current = {};
+      firstFilter.current = true; // we load below; don't double-fire the filter effect
+      setFilters({});
+      void loadFocus(key);
     },
     [snapshot, load, loadFocus],
   );
