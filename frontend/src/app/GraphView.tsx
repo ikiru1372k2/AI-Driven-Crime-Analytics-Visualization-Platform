@@ -29,15 +29,14 @@ import {
 } from "../lib/graphApi";
 import { GraphControls } from "./GraphControls";
 import { GraphDetailPanel } from "./GraphDetailPanel";
+import { GraphRail } from "./GraphRail";
 import {
   ALL_VIEW_KEYS,
   buildCyStyle,
   buildGraphElements,
+  canNavigateNode,
   DEFAULT_SEED_CASE,
-  EDGE_STYLE,
   NODE_COLORS,
-  SEED_EXAMPLES,
-  SEED_TYPES,
 } from "./graphConfig";
 
 export interface GraphSeed {
@@ -122,8 +121,9 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         if (type === "CASE") {
           // OVERVIEW: the seed case + its own entities only (no associated
           // cases yet). Each entity carries an `expandable` count; clicking it
-          // pulls its related cases (progressive, like zooming a map).
-          const a = await fetchAssociations(id, filtersRef.current);
+          // pulls its related cases (progressive, like zooming a map). Filters
+          // belong to the expanded level, so the overview ignores them.
+          const a = await fetchAssociations(id);
           gNodes = a.nodes;
           gEdges = a.edges;
           setSubgraph(null);
@@ -164,6 +164,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     try {
       const a = await fetchAssociations(seedRef.current.id, filtersRef.current, focus);
       if (a.expandable) setExpandable((prev) => ({ ...prev, ...a.expandable }));
+      setResultCount(a.association_count); // cases revealed in this expansion (filterable)
       setMerged((prev) => {
         const nodes = new Map(prev.nodes);
         const edges = new Map(prev.edges);
@@ -171,6 +172,39 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         a.edges.forEach((e) => edges.set(e.edge_id, e));
         return { nodes, edges };
       });
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Re-apply the current attribute filters to whatever has been expanded:
+  // rebuild the overview base (seed + its entities, unfiltered) and re-expand
+  // every drilled entity WITH the filters. Filter lives at the expanded level —
+  // "show all cases in this district, then narrow them".
+  const reloadExpansionsFiltered = useCallback(async () => {
+    const focuses = [...expandedRef.current];
+    if (focuses.length === 0) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const id = seedRef.current.id;
+      const base = await fetchAssociations(id); // overview base is never filtered
+      setExpandable(base.expandable ?? {});
+      const nodes = new Map<string, GraphNode>();
+      const edges = new Map<string, GraphEdge>();
+      base.nodes.forEach((n) => nodes.set(n.node_id, n));
+      base.edges.forEach((e) => edges.set(e.edge_id, e));
+      let count = 0;
+      for (const f of focuses) {
+        const ex = await fetchAssociations(id, filtersRef.current, f);
+        ex.nodes.forEach((n) => nodes.set(n.node_id, n));
+        ex.edges.forEach((e) => edges.set(e.edge_id, e));
+        count += ex.association_count;
+      }
+      setResultCount(count);
+      setMerged({ nodes, edges });
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -186,6 +220,9 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       setSeedId(seed.id);
       expandedRef.current.clear(); // fresh seed = fresh graph
       setDrilled(false); // back to the overview → View control returns
+      setFocusId(null); // drop any prior zoom-to-cluster so the new seed shows in full
+      firstFilter.current = true; // don't let a reset fire the filter effect
+      setFilters({}); // filters belong to an expansion; the overview starts clean
       void load(seed.type, seed.id);
     } else {
       onSeed({ type: "CASE", id: DEFAULT_SEED_CASE });
@@ -227,19 +264,17 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     [snapshot, load, loadFocus],
   );
 
-  // Applying a Filter re-queries the association universe for the current seed
-  // (Filter is orthogonal to View, which is a client-side projection). Skips the
-  // first render so it doesn't double-load with the seed effect.
+  // Applying a Filter narrows the cases in whatever you've expanded (Filter
+  // lives at the expanded level — expand a district, then filter its cases).
+  // At the overview there's nothing expanded, so it's a no-op. Skips the first
+  // render so it doesn't double-load with the seed effect.
   const firstFilter = useRef(true);
   useEffect(() => {
     if (firstFilter.current) {
       firstFilter.current = false;
       return;
     }
-    setFocusId(null);
-    expandedRef.current.clear();
-    setDrilled(false); // filter re-queries the overview
-    void load(seedRef.current.type, seedRef.current.id, false);
+    void reloadExpansionsFiltered();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
@@ -258,6 +293,8 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       if (historyRef.current.length === 0) {
         setDrilled(false);
         expandedRef.current.clear();
+        firstFilter.current = true;
+        setFilters({}); // back at the overview → clear the expansion-level filter
       }
     } else {
       cy?.animate({ fit: { eles: cy.elements(), padding: 60 }, duration: 350 });
@@ -336,11 +373,11 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         setShowDetail(false); // surface via the info button, open on click
       }
     });
-    // tap empty canvas: clear focus, dimming and any pending detail
+    // tap empty canvas: just dismiss any open detail — keep the current focus
+    // and its zoom/dimming (use Back to leave a cluster; clicking away should
+    // not suddenly reveal every other case's details)
     cy.on("tap", (ev) => {
       if (ev.target === cy) {
-        cy.elements().removeClass("dim");
-        setFocusId(null);
         setDetail(null);
         setEdgeDetail(null);
         setShowDetail(false);
@@ -397,111 +434,20 @@ export function GraphView({ seed, onSeed, theme }: Props) {
 
   return (
     <div className="body graph-body">
-      <div className="sidebar graph-rail">
-        <div className="brand">
-          <h1>Association graph</h1>
-          <p>Observed record graph · every edge cites its FIR</p>
-        </div>
-
-        <p className="section-label">Seed</p>
-        <form
-          className="graph-seed"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (seedId.trim()) navigate({ type: seedType, id: seedId.trim() });
-          }}
-        >
-          <select
-            value={seedType}
-            aria-label="Seed node type"
-            onChange={(e) => {
-              const t = e.target.value as NodeType;
-              setSeedType(t);
-              setSeedId(SEED_EXAMPLES[t] ?? ""); // keep the id valid for the new type
-            }}
-          >
-            {SEED_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <input
-            value={seedId}
-            aria-label="Seed record id"
-            placeholder={`record id, e.g. ${SEED_EXAMPLES[seedType] ?? "7231"}`}
-            onChange={(e) => setSeedId(e.target.value)}
-          />
-          <button type="submit" disabled={loading}>
-            Load
-          </button>
-        </form>
-
-        <div role="tablist" aria-label="Graph presentation" className="graph-modes">
-          <button
-            role="tab"
-            aria-selected={mode === "canvas"}
-            className={"tab" + (mode === "canvas" ? " active" : "")}
-            onClick={() => setMode("canvas")}
-          >
-            Canvas
-          </button>
-          <button
-            role="tab"
-            aria-selected={mode === "list"}
-            className={"tab" + (mode === "list" ? " active" : "")}
-            onClick={() => setMode("list")}
-          >
-            List (keyboard)
-          </button>
-        </div>
-
-        <p className="section-label">Edge classification</p>
-        <ul className="graph-legend" aria-label="Edge classification legend">
-          {legend.map((c) => {
-            const s = EDGE_STYLE[c.classification] ?? EDGE_STYLE.FACT;
-            return (
-              <li key={c.classification}>
-                <span
-                  className="legend-swatch"
-                  style={{
-                    borderTop: `${Math.max(2, s.width)}px ${s.style} ${s.color}`,
-                  }}
-                />
-                {c.label}
-              </li>
-            );
-          })}
-        </ul>
-
-        {stubs && (stubs.truncated.length > 0 || stubs.cross_scope.length > 0) && (
-          <div className="graph-stubs" role="note">
-            <p className="section-label">Not shown</p>
-            {stubs.truncated.map((s) => (
-              <p key={s.node_id} className="stub-row">
-                {s.node_id}: {s.more_edges} more edges (cap) —{" "}
-                <button
-                  className="linklike"
-                  onClick={() => {
-                    const [type, ...rest] = s.node_id.split(":");
-                    expand(type as NodeType, rest.join(":"));
-                  }}
-                >
-                  expand here
-                </button>
-              </p>
-            ))}
-            {stubs.cross_scope.map((s) => (
-              <p key={s.node_id} className="stub-row">
-                {s.node_id}: {s.cross_scope_edges} edges outside scope
-              </p>
-            ))}
-          </div>
-        )}
-
-        {error && <p className="error">{error}</p>}
-        {loading && <p className="muted">loading subgraph…</p>}
-      </div>
+      <GraphRail
+        seedType={seedType}
+        seedId={seedId}
+        setSeedType={setSeedType}
+        setSeedId={setSeedId}
+        navigate={navigate}
+        loading={loading}
+        mode={mode}
+        setMode={setMode}
+        legend={legend}
+        stubs={stubs}
+        expand={expand}
+        error={error}
+      />
 
       <div className="graph-stage">
         {mode === "canvas" && drilled && (
@@ -512,6 +458,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         {mode === "canvas" && (
           <GraphControls
             showView={!drilled}
+            showFilter={drilled}
             viewDims={viewDims}
             onToggleDim={(k) =>
               setViewDims((prev) => {
@@ -569,6 +516,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           <GraphDetailPanel
             detail={detail}
             edgeDetail={edgeDetail}
+            canNavigate={canNavigateNode(detail?.node, expandable, merged.edges)}
             onClose={() => setShowDetail(false)}
             onNavigate={(type, id) => {
               setShowDetail(false);

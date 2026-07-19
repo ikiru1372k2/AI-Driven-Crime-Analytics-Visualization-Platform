@@ -5,7 +5,7 @@
  *   Filter = which records QUALIFY (attribute predicates; re-queries the
  *            association universe). View and Filter are orthogonal.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchMeta, type Meta } from "../lib/api";
 import type { AssocFilters } from "../lib/graphApi";
 import { VIEW_DIMS } from "./graphConfig";
@@ -13,6 +13,8 @@ import { VIEW_DIMS } from "./graphConfig";
 interface Props {
   /** View is the overview projection — only shown before you drill into an entity. */
   showView: boolean;
+  /** Filter narrows an expansion's cases — only shown after you drill in. */
+  showFilter: boolean;
   viewDims: Set<string>;
   onToggleDim: (key: string) => void;
   filters: AssocFilters;
@@ -21,22 +23,35 @@ interface Props {
 }
 
 export function GraphControls({
-  showView, viewDims, onToggleDim, filters, onApplyFilters, resultCount,
+  showView, showFilter, viewDims, onToggleDim, filters, onApplyFilters, resultCount,
 }: Props) {
   const [open, setOpen] = useState<"view" | "filter" | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [draft, setDraft] = useState<AssocFilters>(filters);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetchMeta().then(setMeta).catch(() => {});
   }, []);
+  // close the open popover when clicking anywhere outside the control
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
   useEffect(() => {
     setDraft(filters);
   }, [filters]);
-  // if the View control is hidden (we've drilled in), don't leave its popover open
+  // if a control is hidden (level changed), don't leave its popover open
   useEffect(() => {
     if (!showView) setOpen((o) => (o === "view" ? null : o));
   }, [showView]);
+  useEffect(() => {
+    if (!showFilter) setOpen((o) => (o === "filter" ? null : o));
+  }, [showFilter]);
 
   const activeFilterCount = useMemo(
     () => Object.values(filters).filter((v) => v !== undefined && v !== null && v !== "").length,
@@ -49,7 +64,7 @@ export function GraphControls({
     setDraft((d) => ({ ...d, [k]: v === "" ? undefined : Number(v) }));
 
   return (
-    <div className="gc">
+    <div className="gc" ref={rootRef}>
       <div className="gc-icons">
         {showView && (
           <button
@@ -60,13 +75,15 @@ export function GraphControls({
             &#9635; View
           </button>
         )}
-        <button
-          className={"gc-icon" + (open === "filter" ? " open" : "") + (activeFilterCount ? " has" : "")}
-          onClick={() => setOpen(open === "filter" ? null : "filter")}
-          title="Filter — narrow by known attributes"
-        >
-          &#9776; Filter{activeFilterCount ? ` (${activeFilterCount})` : ""}
-        </button>
+        {showFilter && (
+          <button
+            className={"gc-icon" + (open === "filter" ? " open" : "") + (activeFilterCount ? " has" : "")}
+            onClick={() => setOpen(open === "filter" ? null : "filter")}
+            title="Filter — narrow the cases in this expansion"
+          >
+            &#9776; Filter{activeFilterCount ? ` (${activeFilterCount})` : ""}
+          </button>
+        )}
       </div>
 
       {open === "view" && (

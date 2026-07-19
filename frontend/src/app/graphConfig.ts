@@ -127,6 +127,27 @@ export function buildGraphElements(
   ];
 }
 
+/** Whether a node offers "Navigate here". Places/charges/cases always do.
+ *  People (accused/victim) do ONLY when they have an identity match under a
+ *  DIFFERENT name (an `expandable` same-suspect count) that is NOT already
+ *  drawn — navigating should reveal something new. Once those associations are
+ *  on screen (a SAME_IDENTITY edge touches the node), there's nothing to add. */
+export function canNavigateNode(
+  node: { node_type: string; entity_ref_id: string; node_id?: string } | undefined,
+  expandable: Record<string, number>,
+  edges: Map<string, GraphEdge>,
+): boolean {
+  if (!node) return false;
+  if (node.node_type !== "ACCUSED_RECORD" && node.node_type !== "VICTIM_RECORD") return true;
+  const nid = node.node_id ?? `${node.node_type}:${node.entity_ref_id}`;
+  for (const e of edges.values()) {
+    if (e.relationship_type === "SAME_IDENTITY" && (e.source === nid || e.target === nid)) {
+      return false; // its different-name associations are already shown
+    }
+  }
+  return (expandable[nid] ?? 0) > 0; // has variants still to reveal
+}
+
 /** Cytoscape stylesheet for the graph, themed. Extracted here to keep
  *  GraphView under the source-size gate. */
 export function buildCyStyle(theme: "dark" | "light") {
