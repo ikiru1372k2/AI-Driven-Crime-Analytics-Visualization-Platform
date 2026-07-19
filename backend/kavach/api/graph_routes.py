@@ -8,11 +8,11 @@ Every edge in a response carries relationship_type, derivation,
 evidence_case_id and classification; every response carries the #25
 intelligence envelope and the observed-graph limitation string (#44).
 
-Scope enforcement: `scope_district_id` restricts results to cases of that
-district — cross-scope edges are stubbed with a count, never detailed, and
-out-of-scope node detail is 403. The parameter is the enforcement seam for
-Catalyst Authentication (CAT-003/#19): once roles land, the value comes
-from the authenticated identity instead of the query string.
+Scope enforcement: the caller's district scope comes from their
+authenticated role assignment (CAT-003/#19) and restricts results to cases
+of that district — cross-scope edges are stubbed with a count, never
+detailed, and out-of-scope node detail is 403. Scope is resolved
+server-side; a request cannot widen it.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from kavach.api.envelope import envelope
 from kavach.api.graph_store import GraphContext, graph_context
+from kavach.auth import CurrentUser
 from kavach.graph import LIMITATION_OBSERVED_GRAPH, CrimeGraphEdge, NodeType
 from kavach.graph import metrics as metrics_mod
 from kavach.provenance import DataClassification
@@ -35,8 +36,7 @@ MAX_NODES = 500
 DEFAULT_NODES = 150
 
 SCOPE_LIMITATION = (
-    "scope_district_id is caller-supplied until Catalyst Authentication "
-    "(CAT-003/#19) binds it to the authenticated role"
+    "results limited to the caller's authorized district scope (CAT-003)"
 )
 
 
@@ -71,17 +71,19 @@ def _envelope(ctx: GraphContext, extra_limitations: tuple[str, ...] = ()) -> dic
 
 @router.get("/subgraph")
 def get_subgraph(
+    auth: CurrentUser,
     seed_type: NodeType,
     seed_id: str,
     depth: int = Query(default=MAX_DEPTH, ge=1, le=MAX_DEPTH),
     limit: int = Query(default=DEFAULT_NODES, ge=1, le=MAX_NODES),
-    scope_district_id: int | None = Query(default=None),
 ) -> dict:
     """BFS subgraph around a seed node (deterministic order, hard-capped).
 
     Nodes beyond `limit` and cross-scope edges are stubbed with counts
-    ("N more"), never silently dropped.
+    ("N more"), never silently dropped. Scope comes from the caller's role
+    assignment — statewide roles see everything, district roles do not.
     """
+    scope_district_id = auth.district_scope
     ctx = graph_context()
     seed = f"{seed_type.value}:{seed_id}"
     if seed not in ctx.nodes:
@@ -156,11 +158,12 @@ def get_subgraph(
 
 @router.get("/nodes/{node_type}/{ref_id}")
 def get_node_detail(
+    auth: CurrentUser,
     node_type: NodeType,
     ref_id: str,
-    scope_district_id: int | None = Query(default=None),
 ) -> dict:
     """Node detail: metrics (#44), linked cases (evidence), interpretation."""
+    scope_district_id = auth.district_scope
     ctx = graph_context()
     node_id = f"{node_type.value}:{ref_id}"
     node = ctx.nodes.get(node_id)

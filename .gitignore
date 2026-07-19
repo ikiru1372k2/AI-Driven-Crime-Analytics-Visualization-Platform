@@ -32,3 +32,4 @@ data/synthetic/
 .DS_Store
 .catalyst-app/
 .playwright-mcp/
+.catalyst-build/

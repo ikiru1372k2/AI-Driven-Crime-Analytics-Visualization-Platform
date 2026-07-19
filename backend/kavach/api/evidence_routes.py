@@ -5,9 +5,8 @@ window, limitations) → the source FIRs behind it — plus the decision/audit
 trail that makes human-in-the-loop real (decisions survive reload, every
 one is recorded through the append-only audit framework, PROV-003/#26).
 
-Actor/role arrive via X-KAVACH-ACTOR / X-KAVACH-ROLE headers until
-Catalyst Authentication (#19) binds them to the session — the same seam
-as scope_district_id in the graph API.
+Actor and role come from the authenticated Catalyst session (#19); a
+decision can never be attributed to a client-supplied identity.
 """
 
 from __future__ import annotations
@@ -15,11 +14,12 @@ from __future__ import annotations
 import threading
 from typing import Literal
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from kavach.api.audit_routes import audit_repo
 from kavach.api.graph_store import graph_context
+from kavach.auth import CurrentUser
 from kavach.provenance import IntelligenceType, RunStatus
 from kavach.provenance.audit import (
     AuditEvent,
@@ -150,16 +150,17 @@ class DecisionIn(BaseModel):
 @router.post("/decisions")
 def record_decision(
     body: DecisionIn,
-    x_kavach_actor: str | None = Header(default=None),
-    x_kavach_role: str | None = Header(default=None),
+    auth: CurrentUser,
 ) -> dict:
     """Persist a human decision + write its audit event (ADR-004).
 
     Decisions survive reload; re-deciding the same target overwrites the
     decision state but every action stays in the append-only audit trail.
     """
-    actor = x_kavach_actor or "demo-analyst"
-    role = x_kavach_role or "STATE"
+    # actor/role come from the authenticated session (CAT-003/#19) so an
+    # audited decision is always attributable to a real identity
+    actor = auth.user_id
+    role = auth.role.value
     repo = audit_repo()
     with _lock:
         if body.kind == "IDENTITY":
