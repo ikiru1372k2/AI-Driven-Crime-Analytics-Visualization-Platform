@@ -162,11 +162,13 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     [],
   );
 
-  // Show ONE entity's expansion as a self-contained view: the focus entity, the
-  // seed case, and all the related cases (every case, no cap-driven truncation),
-  // narrowed by the current filters. It REPLACES the graph (Back returns to the
-  // overview) so the previous view isn't left behind, and drops the seed's other
-  // sibling entities so it's exactly "this entity and its cases, nothing else".
+  // Show ONE entity's expansion as a self-contained view. It REPLACES the graph
+  // (Back returns to the overview) so the previous view isn't left behind.
+  //  - ACCUSED focus  -> the identity view: the focus person + the SAME person's
+  //    other records (SAME_IDENTITY), i.e. "only the similar people" — not their
+  //    individual cases (drill a record for its FIR).
+  //  - PLACE/charge focus -> the focus entity, the seed case, and the related
+  //    cases; sibling entities dropped.
   const showFocus = useCallback(async (focus: string, pg = 0) => {
     setLoading(true);
     setError(null);
@@ -178,20 +180,34 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       });
       setExpandable(ex.expandable ?? {});
       const isAccused = focus.startsWith("ACCUSED_RECORD:");
-      const seedNodeId = `CASE:${id}`;
-      const keep = (n: GraphNode) =>
-        n.node_id === focus ||
-        n.node_id === seedNodeId ||
-        n.node_type === "CASE" ||
-        (isAccused && n.node_type === "ACCUSED_RECORD");
       const nodes = new Map<string, GraphNode>();
       const edges = new Map<string, GraphEdge>();
-      ex.nodes.forEach((n) => {
-        if (keep(n)) nodes.set(n.node_id, n);
-      });
-      ex.edges.forEach((e) => {
-        if (nodes.has(e.source) && nodes.has(e.target)) edges.set(e.edge_id, e);
-      });
+      if (isAccused) {
+        // the focus person and the records SAME_IDENTITY links to it — nothing else
+        const people = new Set<string>([focus]);
+        ex.edges.forEach((e) => {
+          if (e.relationship_type !== "SAME_IDENTITY") return;
+          if (e.source === focus) people.add(e.target);
+          if (e.target === focus) people.add(e.source);
+        });
+        ex.nodes.forEach((n) => {
+          if (people.has(n.node_id)) nodes.set(n.node_id, n);
+        });
+        ex.edges.forEach((e) => {
+          if (e.relationship_type === "SAME_IDENTITY" && nodes.has(e.source) && nodes.has(e.target))
+            edges.set(e.edge_id, e);
+        });
+      } else {
+        const seedNodeId = `CASE:${id}`;
+        const keep = (n: GraphNode) =>
+          n.node_id === focus || n.node_id === seedNodeId || n.node_type === "CASE";
+        ex.nodes.forEach((n) => {
+          if (keep(n)) nodes.set(n.node_id, n);
+        });
+        ex.edges.forEach((e) => {
+          if (nodes.has(e.source) && nodes.has(e.target)) edges.set(e.edge_id, e);
+        });
+      }
       setResultCount(ex.total_matches);
       setPage(pg);
       setPageInfo({ total: ex.total_matches, offset: ex.offset, count: ex.association_count });
@@ -467,6 +483,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const focusLabel = activeFocusRef.current
     ? merged.nodes.get(activeFocusRef.current)?.label ?? ""
     : "";
+  const focusIsAccused = activeFocusRef.current?.startsWith("ACCUSED_RECORD:") ?? false;
 
   return (
     <div className="body graph-body">
@@ -508,7 +525,8 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         {drilled && pageInfo && (
           <div className="graph-stats" role="status">
             {focusLabel ? `${focusLabel} · ` : ""}
-            {pageInfo.total} case{pageInfo.total === 1 ? "" : "s"}
+            {pageInfo.total} {focusIsAccused ? "same-person record" : "case"}
+            {pageInfo.total === 1 ? "" : "s"}
             {pageInfo.total > PAGE_SIZE
               ? ` (showing ${pageInfo.offset + 1}–${pageInfo.offset + pageInfo.count})`
               : ""}
