@@ -181,27 +181,39 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   // every drilled entity WITH the filters. Filter lives at the expanded level —
   // "show all cases in this district, then narrow them".
   const reloadExpansionsFiltered = useCallback(async () => {
-    const focuses = [...expandedRef.current];
-    if (focuses.length === 0) return;
+    // Filter narrows the CURRENT expansion only (the entity you last opened),
+    // not everything ever expanded — otherwise filtering a station's cases
+    // would also drag in a previously-opened district's cases.
+    const focus = activeFocusRef.current;
+    if (!focus) return;
     setLoading(true);
     setError(null);
     try {
       const id = seedRef.current.id;
-      const base = await fetchAssociations(id); // overview base is never filtered
-      setExpandable(base.expandable ?? {});
+      const ex = await fetchAssociations(id, filtersRef.current, focus);
+      setExpandable(ex.expandable ?? {});
+      // Show ONLY what the filter matched: the seed case, the focus entity and
+      // the matching related cases (plus the identity chain for an accused
+      // focus). Drop the seed's other sibling entities so the view is exactly
+      // "the cases that passed the filter", nothing else.
+      const isAccused = focus.startsWith("ACCUSED_RECORD:");
+      const keep = (n: GraphNode) =>
+        n.node_id === focus ||
+        n.node_type === "CASE" ||
+        (isAccused && n.node_type === "ACCUSED_RECORD");
       const nodes = new Map<string, GraphNode>();
       const edges = new Map<string, GraphEdge>();
-      base.nodes.forEach((n) => nodes.set(n.node_id, n));
-      base.edges.forEach((e) => edges.set(e.edge_id, e));
-      let count = 0;
-      for (const f of focuses) {
-        const ex = await fetchAssociations(id, filtersRef.current, f);
-        ex.nodes.forEach((n) => nodes.set(n.node_id, n));
-        ex.edges.forEach((e) => edges.set(e.edge_id, e));
-        count += ex.association_count;
-      }
-      setResultCount(count);
+      ex.nodes.forEach((n) => {
+        if (keep(n)) nodes.set(n.node_id, n);
+      });
+      ex.edges.forEach((e) => {
+        if (nodes.has(e.source) && nodes.has(e.target)) edges.set(e.edge_id, e);
+      });
+      setResultCount(ex.association_count);
       setMerged({ nodes, edges });
+      // collapse the others back to badges; only the filtered focus stays open
+      expandedRef.current = new Set([focus]);
+      setFocusId(null); // a filter acts on the whole expansion — show it all, not one cluster
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -216,6 +228,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       setSeedType(seed.type);
       setSeedId(seed.id);
       expandedRef.current.clear(); // fresh seed = fresh graph
+      activeFocusRef.current = null;
       setDrilled(false); // back to the overview → View control returns
       setFocusId(null); // drop any prior zoom-to-cluster so the new seed shows in full
       firstFilter.current = true; // don't let a reset fire the filter effect
@@ -245,10 +258,13 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   );
   // remember which nodes we've already expanded so a repeat click just refocuses
   const expandedRef = useRef(new Set<string>());
+  // the entity currently in focus — what a Filter narrows (the last one opened)
+  const activeFocusRef = useRef<string | null>(null);
   const expand = useCallback(
     (type: NodeType, id: string) => {
       const key = `${type}:${id}`;
       setFocusId(key); // zoom to this node's cluster
+      activeFocusRef.current = key; // this becomes the Filter's target
       if (expandedRef.current.has(key)) return; // already loaded — just refocus
       expandedRef.current.add(key);
       setDrilled(true); // we've left the overview → hide the View control
@@ -290,6 +306,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       if (historyRef.current.length === 0) {
         setDrilled(false);
         expandedRef.current.clear();
+        activeFocusRef.current = null;
         firstFilter.current = true;
         setFilters({}); // back at the overview → clear the expansion-level filter
       }
@@ -425,7 +442,13 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   // the camera to fit that node and its linked records
   useEffect(() => {
     const cy = cyRef.current;
-    if (!cy || !focusId) return;
+    if (!cy) return;
+    // no focus → whole graph is the subject: clear any dimming and show all
+    if (!focusId) {
+      cy.elements().removeClass("dim");
+      cy.nodes(":selected").unselect();
+      return;
+    }
     const node = cy.getElementById(focusId);
     if (node.empty()) return;
     const cluster = node.closedNeighborhood();
