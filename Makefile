@@ -16,7 +16,7 @@ build:
 	cd frontend && npm run build
 
 backend-dev:
-	cd backend && uvicorn kavach.api.main:app --reload --port 8000
+	cd backend && KAVACH_DEV_AUTH=1 uvicorn kavach.api.main:app --reload --port 8000
 
 frontend-dev:
 	cd frontend && npm run dev
