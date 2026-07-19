@@ -3,6 +3,7 @@
 #
 # Prerequisites (documented in docs/catalyst/web-client-hosting.md):
 #   npm i -g zcatalyst-cli && catalyst login
+#     …or, in CI, export CATALYST_TOKEN=<token from catalyst token:generate>
 #   export CATALYST_PROJECT_ID=… CATALYST_ORG_ID=…       # never committed
 #   export VITE_API_BASE=https://<gateway-base>          # API Gateway URL
 #

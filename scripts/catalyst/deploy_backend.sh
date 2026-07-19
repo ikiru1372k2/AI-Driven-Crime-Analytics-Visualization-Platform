@@ -4,6 +4,7 @@
 # Prerequisites (documented in docs/catalyst/appsail-deployment.md):
 #   npm i -g zcatalyst-cli        # Catalyst CLI
 #   catalyst login                # authenticate (browser flow)
+#     …or, in CI, export CATALYST_TOKEN=<token from catalyst token:generate>
 #   export CATALYST_PROJECT_ID=…  CATALYST_ORG_ID=…   # never committed (ADR-001)
 #
 # What it does: stages the backend into .catalyst-build/appsail (app code +
