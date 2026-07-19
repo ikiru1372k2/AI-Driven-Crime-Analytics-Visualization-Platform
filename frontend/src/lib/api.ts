@@ -1,11 +1,11 @@
 /**
  * Typed client for the KAVACH analytics API (LOCAL synthetic-data path).
- * Base URL points at the local FastAPI backend (port 8001). CORS on the
+ * Base URL points at the local FastAPI backend (port 8000). CORS on the
  * backend already allows the Vite dev origin (:5173). All data is SYNTHETIC.
  */
 
 export const API_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8001";
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8000";
 
 export interface CrimeSubHead {
   subhead_id: string;
