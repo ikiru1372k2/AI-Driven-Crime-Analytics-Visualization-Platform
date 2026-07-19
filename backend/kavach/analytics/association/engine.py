@@ -121,61 +121,65 @@ def _passes_filters(cid: str, row, acc_by_case, vic_by_case, f: dict) -> bool:
     return True
 
 
-def find_associations(case_id: int | str, *, limit: int = 40, **filters) -> dict:
-    """Association graph for a seed case: related cases + the entities linking them."""
+def find_associations(
+    case_id: int | str, *, focus: str | None = None, limit: int = 40, **filters
+) -> dict:
+    """Association graph for a seed case, revealed progressively.
+
+    focus=None  -> the OVERVIEW: the seed case + its own entities (station,
+                   district, sub-head, accused, victims). Each entity carries an
+                   ``expandable`` count of related cases reachable through it.
+    focus="TYPE:id" -> EXPAND that entity: the related cases reached through it
+                   (same station/district/sub-head), or, for an accused, the
+                   SAME-PERSON cases (entity resolution). Meant to be merged into
+                   the current graph client-side.
+
+    Filters are orthogonal and applied throughout.
+    """
     df = data.enriched_cases()
-    seed = df[df["CaseMasterID"] == str(case_id)]
+    cid0 = str(case_id)
+    seed = df[df["CaseMasterID"] == cid0]
     active = {k: v for k, v in filters.items() if v not in (None, "")}
-    params = {"case_id": str(case_id), "limit": limit, "filters": active}
+    params = {"case_id": cid0, "focus": focus, "limit": limit, "filters": active}
     if seed.empty:
         return {"synthetic": True, "params": params, "seed": None,
-                "association_count": 0, "nodes": [], "edges": []}
+                "association_count": 0, "expandable": {}, "nodes": [], "edges": []}
     s = seed.iloc[0]
 
-    accused = data.accused_records()
-    victims = data.victim_records()
     acc_by_case: dict[str, list[dict]] = {}
     vic_by_case: dict[str, list[dict]] = {}
-    for a in accused:
+    for a in data.accused_records():
         acc_by_case.setdefault(a["case_id"], []).append(a)
-    for v in victims:
+    for v in data.victim_records():
         vic_by_case.setdefault(v["case_id"], []).append(v)
-
-    seed_accused = acc_by_case.get(str(case_id), [])
+    seed_accused = acc_by_case.get(cid0, [])
     ident_idx = _same_suspect_index()
-    # same-suspect: seed accused -> other cases sharing an identity cluster
-    same_suspect: dict[str, list[tuple[dict, dict]]] = {}
-    for sa in seed_accused:
-        for m in ident_idx.get(sa["accused_id"], []):
-            if m["case_id"] != str(case_id):
-                same_suspect.setdefault(m["case_id"], []).append((sa, m))
+    rows_by_cid = {r.CaseMasterID: r for r in df.itertuples(index=False)}
 
-    # score every other case by its association channels (single pass)
-    scored: list[tuple[str, list[str], float]] = []
+    def qualifies(cid: str) -> bool:
+        row = rows_by_cid.get(cid)
+        return row is not None and _passes_filters(cid, row, acc_by_case, vic_by_case, filters)
+
+    # candidate related cases per channel (filtered), excluding the seed
+    station_cases, district_cases, subhead_cases = [], [], []
     for row in df.itertuples(index=False):
         cid = row.CaseMasterID
-        if cid == str(case_id):
+        if cid == cid0 or not qualifies(cid):
             continue
-        bases = []
         if row.station_id == s["station_id"]:
-            bases.append("same_station")
-        if row.subhead_id == s["subhead_id"]:
-            bases.append("same_subhead")
+            station_cases.append(cid)
         if row.district_id == s["district_id"]:
-            bases.append("same_district")
-        if cid in same_suspect:
-            bases.append("same_suspect")
-        if not bases:
-            continue
-        if not _passes_filters(cid, row, acc_by_case, vic_by_case, filters):
-            continue
-        strength = sum(_CHANNELS[b][2] for b in bases)
-        scored.append((cid, bases, strength))
+            district_cases.append(cid)
+        if row.subhead_id == s["subhead_id"]:
+            subhead_cases.append(cid)
+    # same-suspect: seed accused id -> {other case_id: other member}
+    suspect_by_acc: dict[str, dict[str, dict]] = {}
+    for sa in seed_accused:
+        for m in ident_idx.get(sa["accused_id"], []):
+            if m["case_id"] != cid0 and qualifies(m["case_id"]):
+                suspect_by_acc.setdefault(sa["accused_id"], {})[m["case_id"]] = m
 
-    scored.sort(key=lambda x: x[2], reverse=True)
-    scored = scored[:limit]
-
-    # ---- build the graph ----
+    # ---- seed + its own entities (the overview base, always present) ----
     g = _G()
     seed_case = g.node("CASE", case_id, f"Case {case_id}")
     st = g.node("POLICE_STATION", s["station_id"], s["station_name"] or "Station")
@@ -185,36 +189,61 @@ def find_associations(case_id: int | str, *, limit: int = 40, **filters) -> dict
     g.edge("OCCURRED_IN", "FACT", seed_case, di, 1.0, case_id)
     g.edge("CLASSIFIED_AS", "FACT", seed_case, sh, 1.0, case_id)
     for a in seed_accused:
-        an = g.node("ACCUSED_RECORD", a["accused_id"], a["name"])
-        g.edge("ACCUSED_IN", "FACT", an, seed_case, 1.0, case_id)
-    for v in vic_by_case.get(str(case_id), []):
-        vn = g.node("VICTIM_RECORD", v["victim_id"], v["name"])
-        g.edge("VICTIM_IN", "FACT", vn, seed_case, 1.0, case_id)
+        g.node("ACCUSED_RECORD", a["accused_id"], a["name"])
+        g.edge("ACCUSED_IN", "FACT", f"ACCUSED_RECORD:{a['accused_id']}", seed_case, 1.0, case_id)
+    for v in vic_by_case.get(cid0, []):
+        g.node("VICTIM_RECORD", v["victim_id"], v["name"])
+        g.edge("VICTIM_IN", "FACT", f"VICTIM_RECORD:{v['victim_id']}", seed_case, 1.0, case_id)
 
-    for cid, bases, _strength in scored:
-        cn = g.node("CASE", cid, f"Case {cid}")
-        for b in bases:
-            rel, cls, w = _CHANNELS[b]
-            if b == "same_station":
-                g.edge(rel, cls, cn, st, w, cid)
-            elif b == "same_district":
-                g.edge(rel, cls, cn, di, w, cid)
-            elif b == "same_subhead":
-                g.edge(rel, cls, cn, sh, w, cid)
-            elif b == "same_suspect":
-                for seed_acc, other in same_suspect[cid]:
-                    oa = g.node("ACCUSED_RECORD", other["accused_id"], other["name"])
-                    sa = g.node("ACCUSED_RECORD", seed_acc["accused_id"], seed_acc["name"])
-                    g.edge("ACCUSED_IN", "FACT", oa, cn, 1.0, cid)
-                    g.edge("SAME_IDENTITY", "POTENTIAL_ASSOCIATION", sa, oa, w, cid)
+    # how many related cases each entity would reveal (a hint on the overview)
+    expandable = {
+        st: len(set(station_cases)),
+        di: len(set(district_cases)),
+        sh: len(set(subhead_cases)),
+    }
+    for sa in seed_accused:
+        aid = sa["accused_id"]
+        expandable[f"ACCUSED_RECORD:{aid}"] = len(suspect_by_acc.get(aid, {}))
+
+    # ---- expand one entity into its related cases ----
+    assoc_count = 0
+    channel = None
+    if focus:
+        ftype, fid = focus.split(":", 1)
+        if ftype == "ACCUSED_RECORD":
+            channel = "same_suspect"
+            _, cls, w = _CHANNELS[channel]
+            members = suspect_by_acc.get(fid, {})
+            for cid in list(members)[:limit]:
+                m = members[cid]
+                cn = g.node("CASE", cid, f"Case {cid}")
+                g.node("ACCUSED_RECORD", m["accused_id"], m["name"])
+                g.edge("ACCUSED_IN", "FACT", f"ACCUSED_RECORD:{m['accused_id']}", cn, 1.0, cid)
+                g.edge("SAME_IDENTITY", cls, focus, f"ACCUSED_RECORD:{m['accused_id']}", w, cid)
+            assoc_count = min(len(members), limit)
+        else:
+            channel = {"POLICE_STATION": "same_station", "DISTRICT": "same_district",
+                       "CRIME_SUBHEAD": "same_subhead"}.get(ftype)
+            pool = {"POLICE_STATION": station_cases, "DISTRICT": district_cases,
+                    "CRIME_SUBHEAD": subhead_cases}.get(ftype, [])
+            if channel:
+                rel, cls, w = _CHANNELS[channel]
+                for cid in list(dict.fromkeys(pool))[:limit]:
+                    cn = g.node("CASE", cid, f"Case {cid}")
+                    g.edge(rel, cls, cn, focus, w, cid)
+                assoc_count = min(len(set(pool)), limit)
 
     return {
         "synthetic": True,
         "params": params,
-        "seed": {"case_id": str(case_id), "subhead": s["subhead_name"],
+        "seed": {"case_id": cid0, "subhead": s["subhead_name"],
                  "station": s["station_name"], "district": s["district_name"]},
-        "association_count": len(scored),
-        "channels": sorted({b for _, bs, _ in scored for b in bs}),
+        "focus": focus,
+        "channel": channel,
+        "association_count": assoc_count,
+        "total_related": len(set(station_cases) | set(district_cases) | set(subhead_cases)
+                             | {c for m in suspect_by_acc.values() for c in m}),
+        "expandable": expandable,
         "nodes": list(g.nodes.values()),
         "edges": list(g.edges.values()),
     }

@@ -133,16 +133,30 @@ export interface AssocFilters {
 
 export interface AssociationResult {
   seed: { case_id: string; subhead: string; station: string; district: string } | null;
+  focus: string | null;
+  channel: string | null;
   association_count: number;
-  channels: string[];
+  total_related: number;
+  /** node_id -> number of related cases reachable by expanding it (overview hint). */
+  expandable: Record<string, number>;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
 
 /** Investigative association search for a seed case (same-suspect + shared
- *  entities), with server-side attribute filters (orthogonal to the View). */
-export function fetchAssociations(caseId: string, filters: AssocFilters = {}): Promise<AssociationResult> {
+ *  entities), with server-side attribute filters (orthogonal to the View).
+ *
+ *  focus omitted  -> the overview: the seed case + its own entities, each
+ *                    carrying an `expandable` count.
+ *  focus="TYPE:id" -> expand that one entity into its related cases (to merge
+ *                    into the current graph). */
+export function fetchAssociations(
+  caseId: string,
+  filters: AssocFilters = {},
+  focus?: string,
+): Promise<AssociationResult> {
   const p = new URLSearchParams({ case_id: caseId });
+  if (focus) p.set("focus", focus);
   for (const [k, v] of Object.entries(filters)) {
     if (v !== undefined && v !== null && v !== "") p.set(k, String(v));
   }

@@ -39,34 +39,51 @@ def planted(tmp_path_factory):
     assoc_engine._same_suspect_index.cache_clear()
 
 
-def test_same_suspect_links_fragment_cases(planted):
-    """Seeding the fragment's first case links to the same person's other cases."""
+def test_overview_shows_only_seed_entities(planted):
+    """The default (no focus) is the overview: the seed case + its own entities,
+    with NO associated cases yet — those are revealed by expanding an entity."""
+    seed_case = str(planted["identity_fragment"]["records"][0]["case_id"])
+    ov = find_associations(seed_case)
+    case_nodes = {n["entity_ref_id"] for n in ov["nodes"] if n["node_type"] == "CASE"}
+    assert case_nodes == {seed_case}, "overview must not pre-expand related cases"
+    # the seed's entities are present and advertise how many cases they'd reveal
+    assert any(n["node_type"] == "POLICE_STATION" for n in ov["nodes"])
+    assert ov["total_related"] > 0 and any(v > 0 for v in ov["expandable"].values())
+
+
+def test_expand_accused_links_same_suspect_cases(planted):
+    """Expanding the seed's accused reveals the SAME person's other cases."""
     frag = planted["identity_fragment"]["records"]
     seed_case = str(frag[0]["case_id"])
     other_cases = {str(r["case_id"]) for r in frag[1:]}
 
-    res = find_associations(seed_case, limit=60)
-    assert "same_suspect" in res["channels"]
-    # the other fragment cases appear as associated CASE nodes
-    case_nodes = {n["entity_ref_id"] for n in res["nodes"] if n["node_type"] == "CASE"}
+    ov = find_associations(seed_case)
+    accused = [n for n in ov["nodes"] if n["node_type"] == "ACCUSED_RECORD"]
+    focus = max(accused, key=lambda n: ov["expandable"].get(n["node_id"], 0))
+    assert ov["expandable"][focus["node_id"]] > 0
+
+    ex = find_associations(seed_case, focus=focus["node_id"], limit=60)
+    assert ex["channel"] == "same_suspect"
+    case_nodes = {n["entity_ref_id"] for n in ex["nodes"] if n["node_type"] == "CASE"}
     assert other_cases <= case_nodes, f"missing same-suspect cases: {other_cases - case_nodes}"
-    # and there are SAME_IDENTITY edges (candidate, not auto-confirmed)
-    si = [e for e in res["edges"] if e["relationship_type"] == "SAME_IDENTITY"]
+    si = [e for e in ex["edges"] if e["relationship_type"] == "SAME_IDENTITY"]
     assert si and all(e["classification"] == "POTENTIAL_ASSOCIATION" for e in si)
 
 
 def test_every_edge_cites_evidence(planted):
-    res = find_associations(str(planted["identity_fragment"]["records"][0]["case_id"]))
-    assert res["edges"]
-    assert all(isinstance(e["evidence_case_id"], int) for e in res["edges"])
+    ov = find_associations(str(planted["identity_fragment"]["records"][0]["case_id"]))
+    assert ov["edges"]
+    assert all(isinstance(e["evidence_case_id"], int) for e in ov["edges"])
 
 
 def test_filter_narrows_results(planted):
+    """Filters are orthogonal: an impossible district drops the related universe to 0."""
     seed = str(planted["identity_fragment"]["records"][0]["case_id"])
-    wide = find_associations(seed, limit=150)
-    narrow = find_associations(seed, limit=150, district_id=999999)  # no such district
-    assert narrow["association_count"] < wide["association_count"]
-    assert narrow["association_count"] == 0
+    wide = find_associations(seed)
+    narrow = find_associations(seed, district_id=999999)  # no such district
+    assert narrow["total_related"] < wide["total_related"]
+    assert narrow["total_related"] == 0
+    assert all(v == 0 for v in narrow["expandable"].values())
 
 
 def test_unknown_seed_is_empty(planted):

@@ -11,6 +11,8 @@ import type { AssocFilters } from "../lib/graphApi";
 import { VIEW_DIMS } from "./graphConfig";
 
 interface Props {
+  /** View is the overview projection — only shown before you drill into an entity. */
+  showView: boolean;
   viewDims: Set<string>;
   onToggleDim: (key: string) => void;
   filters: AssocFilters;
@@ -18,7 +20,9 @@ interface Props {
   resultCount: number | null;
 }
 
-export function GraphControls({ viewDims, onToggleDim, filters, onApplyFilters, resultCount }: Props) {
+export function GraphControls({
+  showView, viewDims, onToggleDim, filters, onApplyFilters, resultCount,
+}: Props) {
   const [open, setOpen] = useState<"view" | "filter" | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [draft, setDraft] = useState<AssocFilters>(filters);
@@ -29,6 +33,10 @@ export function GraphControls({ viewDims, onToggleDim, filters, onApplyFilters, 
   useEffect(() => {
     setDraft(filters);
   }, [filters]);
+  // if the View control is hidden (we've drilled in), don't leave its popover open
+  useEffect(() => {
+    if (!showView) setOpen((o) => (o === "view" ? null : o));
+  }, [showView]);
 
   const activeFilterCount = useMemo(
     () => Object.values(filters).filter((v) => v !== undefined && v !== null && v !== "").length,
@@ -43,13 +51,15 @@ export function GraphControls({ viewDims, onToggleDim, filters, onApplyFilters, 
   return (
     <div className="gc">
       <div className="gc-icons">
-        <button
-          className={"gc-icon" + (open === "view" ? " open" : "")}
-          onClick={() => setOpen(open === "view" ? null : "view")}
-          title="View — choose which dimensions to show"
-        >
-          &#9635; View
-        </button>
+        {showView && (
+          <button
+            className={"gc-icon" + (open === "view" ? " open" : "")}
+            onClick={() => setOpen(open === "view" ? null : "view")}
+            title="View — choose which dimensions to show (overview only)"
+          >
+            &#9635; View
+          </button>
+        )}
         <button
           className={"gc-icon" + (open === "filter" ? " open" : "") + (activeFilterCount ? " has" : "")}
           onClick={() => setOpen(open === "filter" ? null : "filter")}
