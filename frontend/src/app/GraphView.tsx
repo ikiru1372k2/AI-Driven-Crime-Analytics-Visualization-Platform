@@ -15,9 +15,11 @@
 import cytoscape, { type Core } from "cytoscape";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  fetchAssociations,
   fetchClassifications,
   fetchNodeDetail,
   fetchSubgraph,
+  type AssocFilters,
   type ClassificationInfo,
   type GraphEdge,
   type GraphNode,
@@ -25,16 +27,17 @@ import {
   type NodeType,
   type Subgraph,
 } from "../lib/graphApi";
+import { GraphControls } from "./GraphControls";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import {
+  ALL_VIEW_KEYS,
   buildCyStyle,
   DEFAULT_SEED_CASE,
   EDGE_STYLE,
-  LENSES,
-  type LensKey,
   NODE_COLORS,
   SEED_EXAMPLES,
   SEED_TYPES,
+  VIEW_DIMS,
 } from "./graphConfig";
 
 export interface GraphSeed {
@@ -60,7 +63,11 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [edgeDetail, setEdgeDetail] = useState<GraphEdge | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [mode, setMode] = useState<"canvas" | "list">("canvas");
-  const [lens, setLens] = useState<LensKey>("full");
+  const [viewDims, setViewDims] = useState<Set<string>>(() => new Set(ALL_VIEW_KEYS));
+  const [filters, setFilters] = useState<AssocFilters>({});
+  const [resultCount, setResultCount] = useState<number | null>(null);
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
   const [focusId, setFocusId] = useState<string | null>(null);
   const [hover, setHover] = useState<{ x: number; y: number; label: string; type: string } | null>(
     null,
@@ -103,15 +110,29 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       setLoading(true);
       setError(null);
       try {
-        // depth 1 = THIS record's own direct associations (not the general
-        // neighbourhood); expand a node to explore further
-        const sg = await fetchSubgraph(type, id, { depth: 1, limit: 40 });
-        setSubgraph(sg);
+        // A CASE seed uses the association engine (same-suspect + shared
+        // entities + orthogonal filters); other node types use the base
+        // subgraph. depth 1 = the record's own direct links; expand to explore.
+        let gNodes: GraphNode[];
+        let gEdges: GraphEdge[];
+        if (type === "CASE") {
+          const a = await fetchAssociations(id, filtersRef.current);
+          gNodes = a.nodes;
+          gEdges = a.edges;
+          setSubgraph(null);
+          setResultCount(a.association_count);
+        } else {
+          const sg = await fetchSubgraph(type, id, { depth: 1, limit: 40 });
+          setSubgraph(sg);
+          setResultCount(null);
+          gNodes = sg.nodes;
+          gEdges = sg.edges;
+        }
         setMerged((prev) => {
           const nodes = merge ? new Map(prev.nodes) : new Map<string, GraphNode>();
           const edges = merge ? new Map(prev.edges) : new Map<string, GraphEdge>();
-          sg.nodes.forEach((n) => nodes.set(n.node_id, n));
-          sg.edges.forEach((e) => edges.set(e.edge_id, e));
+          gNodes.forEach((n) => nodes.set(n.node_id, n));
+          gEdges.forEach((e) => edges.set(e.edge_id, e));
           return { nodes, edges };
         });
         if (!merge) {
@@ -153,7 +174,6 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const navigate = useCallback(
     (s: GraphSeed) => {
       snapshot();
-      setLens("full"); // show the destination's full associations, not a filtered slice
       onSeed(s);
     },
     [snapshot, onSeed],
@@ -172,19 +192,20 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     [snapshot, load],
   );
 
-  // switching lens gives a CLEAN view of the current seed in that dimension —
-  // it reloads the seed's base graph so expansions from another lens don't
-  // linger (e.g. Charge expansions showing up under Full)
-  const changeLens = useCallback(
-    (key: LensKey) => {
-      if (key === lens) return; // already on this lens — don't reload
-      setLens(key);
-      setFocusId(null);
-      expandedRef.current.clear();
-      void load(seedRef.current.type, seedRef.current.id, false);
-    },
-    [load, lens],
-  );
+  // Applying a Filter re-queries the association universe for the current seed
+  // (Filter is orthogonal to View, which is a client-side projection). Skips the
+  // first render so it doesn't double-load with the seed effect.
+  const firstFilter = useRef(true);
+  useEffect(() => {
+    if (firstFilter.current) {
+      firstFilter.current = false;
+      return;
+    }
+    setFocusId(null);
+    expandedRef.current.clear();
+    void load(seedRef.current.type, seedRef.current.id, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
 
   // Back: restore the previous view AND its seed (so the form's case number
   // resets too). Falls back to fitting the whole graph when history is empty.
@@ -206,12 +227,15 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   useEffect(() => {
     if (mode !== "canvas" || !containerRef.current) return;
     cyRef.current?.destroy();
-    // lens filter: keep only this dimension's node types (+ the seed), then drop
-    // edges whose endpoints aren't both visible
-    const active = LENSES.find((l) => l.key === lens)?.types ?? null;
+    // View projection: CASE is always shown, plus the node types of the checked
+    // dimensions; then drop edges whose endpoints aren't both visible.
+    const allowed = new Set<string>(["CASE"]);
+    for (const d of VIEW_DIMS) {
+      if (viewDims.has(d.key)) d.types.forEach((t) => allowed.add(t));
+    }
     const seedNodeId = `${seedType}:${seedId}`;
     const nodes = [...merged.nodes.values()].filter(
-      (n) => !active || active.has(n.node_type) || n.node_id === seedNodeId,
+      (n) => allowed.has(n.node_type) || n.node_id === seedNodeId,
     );
     const visibleIds = new Set(nodes.map((n) => n.node_id));
     const edges = [...merged.edges.values()].filter(
@@ -338,7 +362,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [merged, mode, openNode, theme, lens, seedType, seedId]);
+  }, [merged, mode, openNode, theme, viewDims, seedType, seedId]);
 
   // zoom-to-cluster: when a node is focused (tapped), dim the rest and animate
   // the camera to fit that node and its linked records
@@ -474,18 +498,20 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           </button>
         )}
         {mode === "canvas" && (
-          <div className="graph-lens-overlay" role="group" aria-label="Graph view lens">
-            {LENSES.map((l) => (
-              <button
-                key={l.key}
-                className={"lens-chip" + (lens === l.key ? " active" : "")}
-                onClick={() => changeLens(l.key)}
-                title={l.types ? `Show: ${[...l.types].join(", ")}` : "Show all node types"}
-              >
-                {l.label}
-              </button>
-            ))}
-          </div>
+          <GraphControls
+            viewDims={viewDims}
+            onToggleDim={(k) =>
+              setViewDims((prev) => {
+                const s = new Set(prev);
+                if (s.has(k)) s.delete(k);
+                else s.add(k);
+                return s;
+              })
+            }
+            filters={filters}
+            onApplyFilters={setFilters}
+            resultCount={resultCount}
+          />
         )}
         {mode === "canvas" && hover && (
           <div
