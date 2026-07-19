@@ -117,6 +117,38 @@ export function fetchNodeDetail(nodeType: NodeType, refId: string): Promise<Node
   return get(`/api/v1/graph/nodes/${nodeType}/${encodeURIComponent(refId)}`);
 }
 
+/** Attribute filters for association search (all optional, AND-combined). */
+export interface AssocFilters {
+  subhead_id?: string;
+  district_id?: string;
+  station_id?: string;
+  name_contains?: string;
+  name_exact?: string;
+  age_min?: number;
+  age_max?: number;
+  gender?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface AssociationResult {
+  seed: { case_id: string; subhead: string; station: string; district: string } | null;
+  association_count: number;
+  channels: string[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+/** Investigative association search for a seed case (same-suspect + shared
+ *  entities), with server-side attribute filters (orthogonal to the View). */
+export function fetchAssociations(caseId: string, filters: AssocFilters = {}): Promise<AssociationResult> {
+  const p = new URLSearchParams({ case_id: caseId });
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== "") p.set(k, String(v));
+  }
+  return get(`/api/associations?${p}`);
+}
+
 export function fetchClassifications(): Promise<ClassificationInfo[]> {
   return get(`/api/classifications`);
 }

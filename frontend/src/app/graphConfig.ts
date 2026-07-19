@@ -49,6 +49,15 @@ export const DEFAULT_SEED_CASE = SEED_EXAMPLES.CASE;
 /** Lenses — like a map's view switcher, each shows one relationship dimension
  *  so the graph isn't all node types at once. CASE is the connective spine and
  *  the seed node is always kept. `types: null` = show everything. */
+/** View dimensions — multi-select projection (which node types to draw). CASE
+ *  is the connective spine and is always shown; the seed node is always kept. */
+export const VIEW_DIMS: { key: string; label: string; types: string[] }[] = [
+  { key: "people", label: "People", types: ["ACCUSED_RECORD", "VICTIM_RECORD"] },
+  { key: "places", label: "Places", types: ["POLICE_STATION", "DISTRICT"] },
+  { key: "charges", label: "Charges", types: ["CRIME_HEAD", "CRIME_SUBHEAD", "SECTION", "COURT"] },
+];
+export const ALL_VIEW_KEYS = VIEW_DIMS.map((d) => d.key);
+
 export type LensKey = "full" | "people" | "places" | "charge";
 export const LENSES: { key: LensKey; label: string; types: Set<string> | null }[] = [
   { key: "full", label: "Full", types: null },

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
+from kavach.analytics.association import find_associations
 from kavach.analytics.entity import resolve_identities
 from kavach.analytics.hotspot import detect_hotspots
 from kavach.analytics.hotspot import engine as hotspot_engine
@@ -120,6 +121,39 @@ def get_trends(
         limitations=("synthetic data (ADR-011)",),
     )
     return result
+
+
+@router.get("/associations")
+def get_associations(
+    case_id: str = Query(description="seed case (CaseMasterID)"),
+    limit: int = Query(default=40, ge=1, le=150),
+    subhead_id: int | None = Query(default=None, description="filter: crime sub-head"),
+    district_id: int | None = Query(default=None, description="filter: district"),
+    station_id: int | None = Query(default=None, description="filter: police station"),
+    name_contains: str | None = Query(default=None, description="filter: name contains (fuzzy)"),
+    name_exact: str | None = Query(default=None, description="filter: exact name (no fragments)"),
+    age_min: int | None = Query(default=None, ge=0, le=120),
+    age_max: int | None = Query(default=None, ge=0, le=120),
+    gender: str | None = Query(default=None, description="filter: accused gender (M/F)"),
+    date_from: str | None = Query(default=None, description="YYYY-MM-DD"),
+    date_to: str | None = Query(default=None, description="YYYY-MM-DD"),
+) -> dict:
+    """Association graph for a seed case: related cases via shared entities and
+    same-suspect (entity resolution), with orthogonal attribute filters."""
+    return find_associations(
+        case_id,
+        limit=limit,
+        subhead_id=subhead_id,
+        district_id=district_id,
+        station_id=station_id,
+        name_contains=name_contains,
+        name_exact=name_exact,
+        age_min=age_min,
+        age_max=age_max,
+        gender=gender,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 @router.get("/identities")

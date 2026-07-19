@@ -1553,3 +1553,107 @@ select:focus-visible {
   .ev-rail { border-right: 0; border-bottom: 1px solid var(--hairline); }
   .ev-audit { border-left: 0; border-top: 1px solid var(--hairline); }
 }
+
+/* ---- association graph: View + Filter controls (top-right) ---- */
+.gc {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.gc-icons {
+  display: flex;
+  gap: 6px;
+}
+.gc-icon {
+  background: var(--overlay);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+.gc-icon:hover { color: var(--ink); border-color: var(--series-1); }
+.gc-icon.open { border-color: var(--series-1); color: var(--ink); }
+.gc-icon.has { color: var(--series-1); }
+.gc-pop {
+  background: var(--overlay);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  padding: 0.7rem 0.8rem;
+  width: 220px;
+}
+.gc-pop.wide { width: 280px; max-height: 70vh; overflow-y: auto; }
+.gc-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+.gc-count { color: var(--series-1); font-weight: 600; text-transform: none; letter-spacing: 0; }
+.gc-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--ink);
+  padding: 0.25rem 0;
+  cursor: pointer;
+}
+.gc-note { margin: 0.5rem 0 0; font-size: 0.66rem; color: var(--muted); }
+.gc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  flex: 1;
+}
+.gc-field select,
+.gc-field input {
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.35rem 0.45rem;
+  font: inherit;
+  font-size: 0.8rem;
+}
+.gc-row { display: flex; gap: 0.5rem; }
+.gc-actions { display: flex; gap: 0.5rem; margin-top: 0.3rem; }
+.gc-apply {
+  flex: 1;
+  background: var(--series-1);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem;
+  cursor: pointer;
+}
+.gc-apply:hover { filter: brightness(1.08); }
+.gc-clear {
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+}
