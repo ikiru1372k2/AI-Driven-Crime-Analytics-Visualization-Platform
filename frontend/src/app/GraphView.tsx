@@ -202,6 +202,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       }
       setResultCount(count);
       setMerged({ nodes, edges });
+      setFocusId(null); // a filter acts on the whole expansion — show it all, not one cluster
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -425,7 +426,13 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   // the camera to fit that node and its linked records
   useEffect(() => {
     const cy = cyRef.current;
-    if (!cy || !focusId) return;
+    if (!cy) return;
+    // no focus → whole graph is the subject: clear any dimming and show all
+    if (!focusId) {
+      cy.elements().removeClass("dim");
+      cy.nodes(":selected").unselect();
+      return;
+    }
     const node = cy.getElementById(focusId);
     if (node.empty()) return;
     const cluster = node.closedNeighborhood();
