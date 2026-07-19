@@ -8,9 +8,6 @@
  * drives edge styling so observed facts, derived links and potential
  * associations are visually distinct (HUMAN_CONFIRMED distinct again).
  * Large neighbourhoods arrive capped with explicit "N more" stubs.
- *
- * A11y: the List tab is a keyboard-navigable alternative to the canvas —
- * same nodes, same detail panel, no pointer required.
  */
 import cytoscape, { type Core } from "cytoscape";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -36,7 +33,6 @@ import {
   buildGraphElements,
   canNavigateNode,
   DEFAULT_SEED_CASE,
-  NODE_COLORS,
 } from "./graphConfig";
 
 export interface GraphSeed {
@@ -61,7 +57,6 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [edgeDetail, setEdgeDetail] = useState<GraphEdge | null>(null);
   const [showDetail, setShowDetail] = useState(false);
-  const [mode, setMode] = useState<"canvas" | "list">("canvas");
   const [viewDims, setViewDims] = useState<Set<string>>(() => new Set(ALL_VIEW_KEYS));
   const [filters, setFilters] = useState<AssocFilters>({});
   const [resultCount, setResultCount] = useState<number | null>(null);
@@ -72,6 +67,8 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   const [focusId, setFocusId] = useState<string | null>(null);
+  const focusIdRef = useRef(focusId);
+  focusIdRef.current = focusId;
   const [hover, setHover] = useState<
     { x: number; y: number; label: string; type: string; expand: number } | null
   >(null);
@@ -303,7 +300,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
 
   // (re)draw cytoscape when the merged element set changes
   useEffect(() => {
-    if (mode !== "canvas" || !containerRef.current) return;
+    if (!containerRef.current) return;
     cyRef.current?.destroy();
     // View projection + degree sizing + expandable badges (see buildGraphElements)
     const seedNodeId = `${seedType}:${seedId}`;
@@ -358,6 +355,10 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       const ref = ev.target.data("ref") as string;
       const id = ev.target.id() as string;
       setHover(null);
+      // the central node (the focused hub, or the seed case on the overview) is
+      // the subject you're already looking at — no detail card for it.
+      const centralId = focusIdRef.current ?? `${seedRef.current.type}:${seedRef.current.id}`;
+      if (id === centralId) return;
       // an expandable hub always routes through expand(): first tap reveals its
       // related cases, a repeat tap just re-focuses/zooms (no detail popover).
       // Only leaf nodes (cases, non-variant people) open the detail card.
@@ -391,6 +392,10 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       ev.target.addClass("hover");
       ev.target.connectedEdges().addClass("incident");
       cy.container()!.style.cursor = "pointer";
+      // the central node (focused hub, or the seed case on the overview) is
+      // already the subject — no tooltip for it
+      const centralId = focusIdRef.current ?? `${seedRef.current.type}:${seedRef.current.id}`;
+      if (ev.target.id() === centralId) return;
       const rp = ev.renderedPosition;
       if (rp) {
         const id = ev.target.id() as string;
@@ -414,7 +419,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [merged, mode, openNode, expand, expandable, theme, viewDims, seedType, seedId]);
+  }, [merged, openNode, expand, expandable, theme, viewDims, seedType, seedId]);
 
   // zoom-to-cluster: when a node is focused (tapped), dim the rest and animate
   // the camera to fit that node and its linked records
@@ -431,9 +436,6 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   }, [focusId, merged]);
 
   const stubs = subgraph?.stubs;
-  const nodeList = [...merged.nodes.values()].sort((a, b) =>
-    a.node_id.localeCompare(b.node_id),
-  );
 
   return (
     <div className="body graph-body">
@@ -444,8 +446,6 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         setSeedId={setSeedId}
         navigate={navigate}
         loading={loading}
-        mode={mode}
-        setMode={setMode}
         legend={legend}
         stubs={stubs}
         expand={expand}
@@ -453,30 +453,28 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       />
 
       <div className="graph-stage">
-        {mode === "canvas" && drilled && (
+        {drilled && (
           <button className="graph-zoomout" onClick={goBack} title="Back to the previous view">
             &#8592; Back
           </button>
         )}
-        {mode === "canvas" && (
-          <GraphControls
-            showView={!drilled}
-            showFilter={drilled}
-            viewDims={viewDims}
-            onToggleDim={(k) =>
-              setViewDims((prev) => {
-                const s = new Set(prev);
-                if (s.has(k)) s.delete(k);
-                else s.add(k);
-                return s;
-              })
-            }
-            filters={filters}
-            onApplyFilters={setFilters}
-            resultCount={resultCount}
-          />
-        )}
-        {mode === "canvas" && hover && (
+        <GraphControls
+          showView={!drilled}
+          showFilter={drilled}
+          viewDims={viewDims}
+          onToggleDim={(k) =>
+            setViewDims((prev) => {
+              const s = new Set(prev);
+              if (s.has(k)) s.delete(k);
+              else s.add(k);
+              return s;
+            })
+          }
+          filters={filters}
+          onApplyFilters={setFilters}
+          resultCount={resultCount}
+        />
+        {hover && (
           <div
             className="graph-tooltip"
             style={{ left: hover.x, top: hover.y }}
@@ -486,34 +484,14 @@ export function GraphView({ seed, onSeed, theme }: Props) {
             <span className="tt-label">{hover.label}</span>
             <span className="tt-hint">
               {hover.expand > 0
-                ? `click to expand ${hover.expand} related case${hover.expand > 1 ? "s" : ""}`
+                ? hover.type === "ACCUSED_RECORD" || hover.type === "VICTIM_RECORD"
+                  ? `click to expand ${hover.expand} similar person${hover.expand > 1 ? "s" : ""}`
+                  : `click to expand ${hover.expand} related case${hover.expand > 1 ? "s" : ""}`
                 : "click to view details"}
             </span>
           </div>
         )}
-        {mode === "canvas" ? (
-          <div ref={containerRef} className="graph-canvas" aria-label="Association graph canvas" />
-        ) : (
-          <ul className="graph-nodelist" aria-label="Graph nodes (keyboard navigation)">
-            {nodeList.map((n) => (
-              <li key={n.node_id}>
-                <button
-                  className={
-                    "node-row" + (detail?.node.node_id === n.node_id ? " active" : "")
-                  }
-                  onClick={() => openNode(n.node_type, n.entity_ref_id)}
-                >
-                  <span
-                    className="node-dot"
-                    style={{ background: NODE_COLORS[n.node_type] ?? "#888" }}
-                    aria-hidden
-                  />
-                  <span className="node-type">{n.node_type}</span> {n.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div ref={containerRef} className="graph-canvas" aria-label="Association graph canvas" />
 
         {showDetail && (
           <GraphDetailPanel

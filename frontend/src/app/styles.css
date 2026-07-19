@@ -805,6 +805,10 @@ select:focus-visible {
   margin-right: 0.5rem;
   vertical-align: middle;
 }
+.node-legend li {
+  display: flex;
+  align-items: center;
+}
 .graph-stubs .stub-row {
   font-size: 0.78rem;
   color: var(--muted);

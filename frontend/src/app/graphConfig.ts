@@ -4,7 +4,8 @@ import type cytoscape from "cytoscape";
 import type { GraphEdge, GraphNode, NodeType } from "../lib/graphApi";
 
 /** Node colours by type (status-neutral palette; classification colours
- *  are reserved for edges so inference-vs-fact stays unambiguous). */
+ *  are reserved for edges so inference-vs-fact stays unambiguous). Grouped by
+ *  family: people (purple/teal), places (blues/greys), charges (warm + green). */
 export const NODE_COLORS: Record<string, string> = {
   CASE: "#4f7cc9",
   ACCUSED_RECORD: "#a76fb9",
@@ -16,6 +17,20 @@ export const NODE_COLORS: Record<string, string> = {
   COURT: "#8a7dc9",
   SECTION: "#6f8f5a",
 };
+
+/** Human labels for the node-type legend, in a sensible reading order
+ *  (the connective spine first, then people, places, charges). */
+export const NODE_LEGEND: { type: string; label: string }[] = [
+  { type: "CASE", label: "Case (FIR)" },
+  { type: "ACCUSED_RECORD", label: "Accused" },
+  { type: "VICTIM_RECORD", label: "Victim" },
+  { type: "POLICE_STATION", label: "Police station" },
+  { type: "DISTRICT", label: "District" },
+  { type: "CRIME_SUBHEAD", label: "Crime type" },
+  { type: "CRIME_HEAD", label: "Crime head" },
+  { type: "SECTION", label: "IPC section" },
+  { type: "COURT", label: "Court" },
+];
 
 /** Edge styling by classification — the provenance-first rule (#25/#43):
  *  observed FACT restatements: solid grey; DERIVED_METRIC co-occurrence:
