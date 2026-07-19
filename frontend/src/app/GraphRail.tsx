@@ -2,7 +2,7 @@
  *  classification legend, and "not shown" stubs. Extracted from GraphView so
  *  that component stays under the source-size gate. */
 import type { ClassificationInfo, NodeType, Subgraph } from "../lib/graphApi";
-import { EDGE_STYLE, SEED_EXAMPLES, SEED_TYPES } from "./graphConfig";
+import { EDGE_STYLE, NODE_COLORS, NODE_LEGEND, SEED_EXAMPLES, SEED_TYPES } from "./graphConfig";
 import type { GraphSeed } from "./GraphView";
 
 interface Props {
@@ -12,8 +12,6 @@ interface Props {
   setSeedId: (id: string) => void;
   navigate: (s: GraphSeed) => void;
   loading: boolean;
-  mode: "canvas" | "list";
-  setMode: (m: "canvas" | "list") => void;
   legend: ClassificationInfo[];
   stubs: Subgraph["stubs"] | undefined;
   expand: (type: NodeType, id: string) => void;
@@ -22,7 +20,7 @@ interface Props {
 
 export function GraphRail({
   seedType, seedId, setSeedType, setSeedId, navigate, loading,
-  mode, setMode, legend, stubs, expand, error,
+  legend, stubs, expand, error,
 }: Props) {
   return (
     <div className="sidebar graph-rail">
@@ -65,24 +63,19 @@ export function GraphRail({
         </button>
       </form>
 
-      <div role="tablist" aria-label="Graph presentation" className="graph-modes">
-        <button
-          role="tab"
-          aria-selected={mode === "canvas"}
-          className={"tab" + (mode === "canvas" ? " active" : "")}
-          onClick={() => setMode("canvas")}
-        >
-          Canvas
-        </button>
-        <button
-          role="tab"
-          aria-selected={mode === "list"}
-          className={"tab" + (mode === "list" ? " active" : "")}
-          onClick={() => setMode("list")}
-        >
-          List (keyboard)
-        </button>
-      </div>
+      <p className="section-label">Node type</p>
+      <ul className="graph-legend node-legend" aria-label="Node type legend">
+        {NODE_LEGEND.map((n) => (
+          <li key={n.type}>
+            <span
+              className="node-dot"
+              style={{ background: NODE_COLORS[n.type] ?? "#888" }}
+              aria-hidden
+            />
+            {n.label}
+          </li>
+        ))}
+      </ul>
 
       <p className="section-label">Edge classification</p>
       <ul className="graph-legend" aria-label="Edge classification legend">
