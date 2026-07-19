@@ -126,6 +126,11 @@ def get_trends(
 @router.get("/associations")
 def get_associations(
     case_id: str = Query(description="seed case (CaseMasterID)"),
+    focus: str | None = Query(
+        default=None,
+        description="expand one entity: 'TYPE:id' (e.g. DISTRICT:44, ACCUSED_RECORD:2238). "
+        "Omit for the overview (seed + its entities).",
+    ),
     limit: int = Query(default=40, ge=1, le=150),
     subhead_id: int | None = Query(default=None, description="filter: crime sub-head"),
     district_id: int | None = Query(default=None, description="filter: district"),
@@ -142,6 +147,7 @@ def get_associations(
     same-suspect (entity resolution), with orthogonal attribute filters."""
     return find_associations(
         case_id,
+        focus=focus,
         limit=limit,
         subhead_id=subhead_id,
         district_id=district_id,

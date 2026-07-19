@@ -7,6 +7,10 @@ import { NODE_COLORS } from "./graphConfig";
 interface Props {
   detail: NodeDetail | null;
   edgeDetail: GraphEdge | null;
+  /** Whether "Navigate here" is offered. For people it's only meaningful when
+   *  the person has an identity match under a different name (else there's
+   *  nothing new to explore); places/charges/cases can always be navigated. */
+  canNavigate: boolean;
   onClose: () => void;
   onNavigate: (type: NodeType, id: string) => void;
   onNavigateCase: (caseId: string) => void;
@@ -15,6 +19,7 @@ interface Props {
 export function GraphDetailPanel({
   detail,
   edgeDetail,
+  canNavigate,
   onClose,
   onNavigate,
   onNavigateCase,
@@ -66,12 +71,14 @@ export function GraphDetailPanel({
             <li className="muted">and {detail.linked_cases.length - 12} more</li>
           )}
         </ul>
-        <button
-          className="nav-btn"
-          onClick={() => onNavigate(detail.node.node_type, detail.node.entity_ref_id)}
-        >
-          Navigate here →
-        </button>
+        {canNavigate && (
+          <button
+            className="nav-btn"
+            onClick={() => onNavigate(detail.node.node_type, detail.node.entity_ref_id)}
+          >
+            Navigate here →
+          </button>
+        )}
         {detail.intelligence.limitations?.map((l) => (
           <p key={l} className="muted small">
             {l}

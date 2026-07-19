@@ -1,7 +1,7 @@
 /** Static config for the association graph view (colours, seed presets, lenses).
  *  Kept out of GraphView.tsx so the component stays under the source-size gate. */
 import type cytoscape from "cytoscape";
-import type { NodeType } from "../lib/graphApi";
+import type { GraphEdge, GraphNode, NodeType } from "../lib/graphApi";
 
 /** Node colours by type (status-neutral palette; classification colours
  *  are reserved for edges so inference-vs-fact stays unambiguous). */
@@ -69,6 +69,84 @@ export const LENSES: { key: LensKey; label: string; types: Set<string> | null }[
     types: new Set(["CASE", "CRIME_HEAD", "CRIME_SUBHEAD", "SECTION", "COURT"]),
   },
 ];
+
+/** Build cytoscape elements from the merged graph, applying the View projection
+ *  (CASE + checked dimensions; seed always kept), dropping edges whose endpoints
+ *  aren't both visible and disconnected non-seed nodes, sizing nodes by degree,
+ *  and badging still-expandable entities with a "+N related cases" hint.
+ *  Pure + extracted so GraphView stays under the source-size gate. */
+export function buildGraphElements(
+  merged: { nodes: Map<string, GraphNode>; edges: Map<string, GraphEdge> },
+  viewDims: Set<string>,
+  expandable: Record<string, number>,
+  expandedIds: Set<string>,
+  seedNodeId: string,
+) {
+  const allowed = new Set<string>(["CASE"]);
+  for (const d of VIEW_DIMS) if (viewDims.has(d.key)) d.types.forEach((t) => allowed.add(t));
+  const nodes = [...merged.nodes.values()].filter(
+    (n) => allowed.has(n.node_type) || n.node_id === seedNodeId,
+  );
+  const visibleIds = new Set(nodes.map((n) => n.node_id));
+  const edges = [...merged.edges.values()].filter(
+    (e) => visibleIds.has(e.source) && visibleIds.has(e.target),
+  );
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+  const maxDeg = Math.max(1, ...degree.values());
+  const shownNodes = nodes.filter(
+    (n) => (degree.get(n.node_id) ?? 0) > 0 || n.node_id === seedNodeId,
+  );
+  return [
+    ...shownNodes.map((n) => ({
+      data: {
+        id: n.node_id,
+        label:
+          expandable[n.node_id] > 0 && !expandedIds.has(n.node_id)
+            ? `${n.label}  +${expandable[n.node_id]}`
+            : n.label,
+        type: n.node_type,
+        ref: n.entity_ref_id,
+        deg: degree.get(n.node_id) ?? 0,
+        degNorm: (degree.get(n.node_id) ?? 0) / maxDeg,
+      },
+    })),
+    ...edges.map((e) => ({
+      data: {
+        id: e.edge_id,
+        source: e.source,
+        target: e.target,
+        classification: e.classification,
+        rel: e.relationship_type,
+        weight: e.weight,
+      },
+    })),
+  ];
+}
+
+/** Whether a node offers "Navigate here". Places/charges/cases always do.
+ *  People (accused/victim) do ONLY when they have an identity match under a
+ *  DIFFERENT name (an `expandable` same-suspect count) that is NOT already
+ *  drawn — navigating should reveal something new. Once those associations are
+ *  on screen (a SAME_IDENTITY edge touches the node), there's nothing to add. */
+export function canNavigateNode(
+  node: { node_type: string; entity_ref_id: string; node_id?: string } | undefined,
+  expandable: Record<string, number>,
+  edges: Map<string, GraphEdge>,
+): boolean {
+  if (!node) return false;
+  if (node.node_type !== "ACCUSED_RECORD" && node.node_type !== "VICTIM_RECORD") return true;
+  const nid = node.node_id ?? `${node.node_type}:${node.entity_ref_id}`;
+  for (const e of edges.values()) {
+    if (e.relationship_type === "SAME_IDENTITY" && (e.source === nid || e.target === nid)) {
+      return false; // its different-name associations are already shown
+    }
+  }
+  return (expandable[nid] ?? 0) > 0; // has variants still to reveal
+}
 
 /** Cytoscape stylesheet for the graph, themed. Extracted here to keep
  *  GraphView under the source-size gate. */
