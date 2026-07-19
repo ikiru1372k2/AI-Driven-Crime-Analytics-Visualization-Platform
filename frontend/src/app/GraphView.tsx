@@ -358,7 +358,10 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       const ref = ev.target.data("ref") as string;
       const id = ev.target.id() as string;
       setHover(null);
-      if ((expandable[id] ?? 0) > 0 && !expandedRef.current.has(id)) {
+      // an expandable hub always routes through expand(): first tap reveals its
+      // related cases, a repeat tap just re-focuses/zooms (no detail popover).
+      // Only leaf nodes (cases, non-variant people) open the detail card.
+      if ((expandable[id] ?? 0) > 0) {
         expand(type, ref);
       } else {
         openNode(type, ref);
