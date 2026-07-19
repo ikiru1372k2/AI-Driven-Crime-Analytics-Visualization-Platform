@@ -12,6 +12,7 @@ from kavach.api.graph_store import graph_context, reset_graph_context
 from kavach.api.main import app
 from kavach.datagen.generator import generate_dataset
 from kavach.graph import LIMITATION_OBSERVED_GRAPH
+from tests.conftest import install_test_auth, uninstall_test_auth
 
 ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = ROOT / "docs/schema/schema-manifest.json"
@@ -29,8 +30,10 @@ def client(tmp_path_factory):
     prev = os.environ.get("KAVACH_DATA_DIR")
     os.environ["KAVACH_DATA_DIR"] = str(out)
     reset_graph_context()
-    with TestClient(app) as c:
+    headers = install_test_auth()
+    with TestClient(app, headers=headers) as c:
         yield c
+    uninstall_test_auth()
     if prev is None:
         os.environ.pop("KAVACH_DATA_DIR", None)
     else:
@@ -155,56 +158,9 @@ def test_node_detail_404(client):
     assert client.get("/api/v1/graph/nodes/ACCUSED_RECORD/99999999").status_code == 404
 
 
-def test_cross_scope_leakage_forbidden(client, ground_truth):
-    """District analyst cannot retrieve other-district node details."""
-    case_id, accused, district = ground_truth
-    other = district + 1 if district < 30 else district - 1
-    r = client.get(
-        f"/api/v1/graph/nodes/ACCUSED_RECORD/{accused[0]}",
-        params={"scope_district_id": other},
-    )
-    assert r.status_code == 403
-    # in-scope succeeds and every returned case is inside the scope
-    r = client.get(
-        f"/api/v1/graph/nodes/ACCUSED_RECORD/{accused[0]}",
-        params={"scope_district_id": district},
-    )
-    assert r.status_code == 200
-    ctx = graph_context()
-    assert all(ctx.case_district[c] == district for c in r.json()["linked_cases"])
-
-
-def test_cross_scope_subgraph_edges_stubbed(client, ground_truth):
-    """Scoped subgraph never details out-of-scope edges — stub counts only."""
-    case_id, accused, district = ground_truth
-    ctx = graph_context()
-    # a district node touches cases of exactly one district; from a station
-    # node in scope, edges to cases of other districts must not appear
-    r = client.get(
-        "/api/v1/graph/subgraph",
-        params={
-            "seed_type": "DISTRICT", "seed_id": district,
-            "scope_district_id": district, "depth": 1, "limit": 500,
-        },
-    )
-    assert r.status_code == 200
-    body = r.json()
-    for e in body["edges"]:
-        assert ctx.case_district[e["evidence_case_id"]] == district
-    # the OTHER district's seed yields zero in-scope edges, all stubbed
-    others = sorted({d for d in ctx.case_district.values() if d != district})
-    if others:
-        r2 = client.get(
-            "/api/v1/graph/subgraph",
-            params={
-                "seed_type": "DISTRICT", "seed_id": others[0],
-                "scope_district_id": district, "depth": 1,
-            },
-        )
-        b2 = r2.json()
-        assert b2["edges"] == []
-        assert b2["stubs"]["cross_scope"], "expected cross-scope stub counts"
-
+# NOTE: cross-scope isolation moved to tests/api/test_auth_api.py — scope is
+# now resolved from the caller's role assignment (CAT-003/#19), so it can no
+# longer be exercised with a query parameter.
 
 def test_latency_p95_under_800ms(client, ground_truth):
     case_id, accused, _ = ground_truth

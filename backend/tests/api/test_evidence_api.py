@@ -9,7 +9,9 @@ from fastapi.testclient import TestClient
 from kavach.api.audit_routes import reset_audit_repo
 from kavach.api.graph_store import reset_graph_context
 from kavach.api.main import app
+from kavach.auth import Role, RoleAssignment, ScopeType
 from kavach.datagen.generator import generate_dataset
+from tests.conftest import TEST_USER_HEADER, install_test_auth, uninstall_test_auth
 
 ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = ROOT / "docs/schema/schema-manifest.json"
@@ -23,8 +25,14 @@ def client(tmp_path_factory):
     os.environ["KAVACH_DATA_DIR"] = str(out)
     reset_graph_context()
     reset_audit_repo()
-    with TestClient(app) as c:
+    headers = install_test_auth(
+        RoleAssignment(
+            user_id="evidence-admin", role=Role.SYSTEM_ADMIN, scope_type=ScopeType.STATE
+        )
+    )
+    with TestClient(app, headers=headers) as c:
         yield c
+    uninstall_test_auth()
     if prev is None:
         os.environ.pop("KAVACH_DATA_DIR", None)
     else:
@@ -68,7 +76,6 @@ def test_decision_persists_and_survives_reload(client):
     r = client.post(
         "/api/v1/decisions",
         json={"kind": "IDENTITY", "target_ref": "cluster-42", "decision": "CONFIRMED"},
-        headers={"X-KAVACH-ACTOR": "dysp-shetty", "X-KAVACH-ROLE": "DISTRICT"},
     )
     assert r.status_code == 200 and r.json()["recorded"]
     r2 = client.post(
@@ -79,7 +86,7 @@ def test_decision_persists_and_survives_reload(client):
     # restore map: both decisions present (simulates reload)
     decisions = {d["target_ref"]: d for d in client.get("/api/v1/decisions").json()["decisions"]}
     assert decisions["cluster-42"]["decision"] == "CONFIRMED"
-    assert decisions["cluster-42"]["actor_id"] == "dysp-shetty"
+    assert decisions["cluster-42"]["actor_id"] == "test-state-analyst"  # session identity
     assert decisions["alert-7"]["decision"] == "ACKNOWLEDGED"
 
 
@@ -91,7 +98,7 @@ def test_decision_writes_append_only_audit(client):
     audit = client.get(
         "/api/v1/audit",
         params={"event_type": "IDENTITY_REVIEW_DECISION"},
-        headers={"X-KAVACH-ROLE": "SYSTEM_ADMIN"},
+        headers={TEST_USER_HEADER: "evidence-admin"},
     ).json()
     assert any("candidate:cluster-9" in e["target_refs"] for e in audit["events"])
 
@@ -107,7 +114,7 @@ def test_redecide_overwrites_state_keeps_audit_trail(client):
     audit = client.get(
         "/api/v1/audit",
         params={"event_type": "IDENTITY_REVIEW_DECISION"},
-        headers={"X-KAVACH-ROLE": "SYSTEM_ADMIN"},
+        headers={TEST_USER_HEADER: "evidence-admin"},
     ).json()
     flips = [e for e in audit["events"] if "candidate:cluster-flip" in e["target_refs"]]
     assert len(flips) == 2  # every action stays in the trail
