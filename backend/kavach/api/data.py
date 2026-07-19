@@ -153,10 +153,36 @@ def accused_records() -> list[dict]:
             "GenderID": "gender",
         }
     )[["accused_id", "case_id", "name", "age", "gender", "district_id", "district_name"]]
-    out = out.where(out.notna(), None)
     recs = out.to_dict(orient="records")
     for r in recs:  # age -> int|None for clean JSON / comparison
-        r["age"] = None if r["age"] is None else int(r["age"])
+        r["age"] = None if pd.isna(r["age"]) else int(r["age"])
+        for k in ("name", "gender", "district_id", "district_name"):
+            if pd.isna(r[k]):
+                r[k] = None
+    return recs
+
+
+def victim_records() -> list[dict]:
+    """Victim persons joined to their case's district (for association search)."""
+    cols = ["VictimMasterID", "CaseMasterID", "VictimName", "AgeYear", "GenderID"]
+    vic = _read("Victim")[cols]
+    cases = enriched_cases()[["CaseMasterID", "district_id", "district_name"]]
+    df = vic.merge(cases, on="CaseMasterID", how="left")
+    df["age"] = pd.to_numeric(df["AgeYear"], errors="coerce")
+    out = df.rename(
+        columns={
+            "VictimMasterID": "victim_id",
+            "CaseMasterID": "case_id",
+            "VictimName": "name",
+            "GenderID": "gender",
+        }
+    )[["victim_id", "case_id", "name", "age", "gender", "district_id", "district_name"]]
+    recs = out.to_dict(orient="records")
+    for r in recs:
+        r["age"] = None if pd.isna(r["age"]) else int(r["age"])
+        for k in ("name", "gender", "district_id", "district_name"):
+            if pd.isna(r[k]):
+                r[k] = None
     return recs
 
 
