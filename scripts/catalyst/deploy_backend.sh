@@ -44,6 +44,13 @@ if [ "${SKIP_CONSOLE:-0}" != "1" ]; then
   cp -r "$ROOT/frontend/dist/." "$BUILD/web/"
 fi
 
+# -- schema manifest -----------------------------------------------------------
+# The ingestion path validates every CSV against this manifest. It lives under
+# docs/ in the repo, which is NOT part of the bundle — omitting it made every
+# graph and evidence endpoint 500 in production while passing locally.
+mkdir -p "$BUILD/docs/schema"
+cp "$ROOT/docs/schema/schema-manifest.json" "$BUILD/docs/schema/schema-manifest.json"
+
 # -- synthetic dataset (~1 MB) -------------------------------------------------
 # The deployed analytics read the generated CSVs through KAVACH_DATA_DIR (the
 # LOCAL adapter). The data is SYNTHETIC by design (ADR-011), so shipping it
@@ -98,6 +105,7 @@ cat > "$BUILD/app-config.json" <<JSON
     "KAVACH_ENV": "catalyst",
     "KAVACH_DATA_DIR": "data/synthetic",
     "KAVACH_WEB_DIR": "web",
+    "KAVACH_SCHEMA_MANIFEST": "docs/schema/schema-manifest.json",
     "KAVACH_DEMO_IDENTITY": "${KAVACH_DEMO_IDENTITY:-demo-state-analyst}"
   },
   "memory": 512

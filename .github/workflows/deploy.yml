@@ -147,3 +147,23 @@ jobs:
           meta_code=$(curl -s -m 120 -o /tmp/meta.json -w '%{http_code}' "$APPSAIL_URL/api/meta")
           [ "$meta_code" = "200" ] || { echo "analytics API failed: $meta_code"; exit 1; }
           echo "analytics API serving: $(head -c 120 /tmp/meta.json)"
+
+          # The console is served by this app, so "/" must return the SPA.
+          root_code=$(curl -s -m 60 -o /tmp/root.html -w '%{http_code}' "$APPSAIL_URL/")
+          [ "$root_code" = "200" ] || { echo "console not served at /: $root_code"; exit 1; }
+          grep -qi "<div id=\"root\"\|<title>" /tmp/root.html || { echo "/ did not return the SPA"; exit 1; }
+          echo "console served at /"
+
+          # Graph + evidence build the projection from the bundled manifest.
+          # These 500'd in production while passing locally (docs/ was not
+          # shipped), so the pipeline now proves them on every deploy.
+          for path in "/api/v1/graph/subgraph?seed_type=CASE&seed_id=7231" "/api/v1/evidence/runs"; do
+            code=$(curl -s -m 180 -o /tmp/probe.json -w '%{http_code}' "$APPSAIL_URL$path")
+            [ "$code" = "200" ] || { echo "FAILED $path -> $code"; head -c 300 /tmp/probe.json; exit 1; }
+            echo "ok $path"
+          done
+
+          # Authorization must still be enforced: audit is SYSTEM_ADMIN-only.
+          audit_code=$(curl -s -m 60 -o /dev/null -w '%{http_code}' "$APPSAIL_URL/api/v1/audit")
+          [ "$audit_code" = "403" ] || { echo "audit should be 403, got $audit_code"; exit 1; }
+          echo "authorization enforced: /api/v1/audit -> 403"
