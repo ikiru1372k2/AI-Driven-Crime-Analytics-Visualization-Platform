@@ -12,12 +12,14 @@ import {
   fetchMoCase,
   fetchMoProfiles,
   fetchMoRun,
+  fetchMoVocabulary,
   fetchRelated,
   MO_FIELDS,
   type MoCase,
   type MoListRow,
   type MoMatch,
   type MoRun,
+  type MoVocabulary,
 } from "../lib/moApi";
 
 const PAGE_SIZE = 40;
@@ -57,15 +59,30 @@ export function MoView() {
   const [total, setTotal] = useState(0);
   const [related, setRelated] = useState<MoMatch[] | null>(null);
   const [loadingRelated, setLoadingRelated] = useState(false);
+  // MO attribute filters — "find cases committed THIS way", without needing
+  // to already have a case in hand
+  const [vocab, setVocab] = useState<MoVocabulary | null>(null);
+  const [action, setAction] = useState("");
+  const [target, setTarget] = useState("");
+  const [mobility, setMobility] = useState("");
+  const hasFilters = Boolean(query || action || target || mobility);
 
   useEffect(() => {
     fetchMoRun().then(setRun).catch((e) => setError(String(e)));
+    fetchMoVocabulary().then(setVocab).catch(() => {});
   }, []);
 
   // debounce so typing an FIR number does not fire a request per keystroke
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchMoProfiles({ q: query, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
+      fetchMoProfiles({
+        q: query,
+        action,
+        target,
+        mobility,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      })
         .then((r) => {
           setRows(r.profiles);
           setTotal(r.total);
@@ -77,7 +94,7 @@ export function MoView() {
     }, 250);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, page]);
+  }, [query, action, target, mobility, page]);
 
   useEffect(() => {
     if (selected == null) return;
@@ -148,8 +165,72 @@ export function MoView() {
           }}
         />
 
+        {vocab && (
+          <div className="mo-filters">
+            <select
+              value={action}
+              aria-label="Filter by action"
+              onChange={(e) => {
+                setAction(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">Any action</option>
+              {vocab.crime_action.map((v) => (
+                <option key={v} value={v}>
+                  {v.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <select
+              value={target}
+              aria-label="Filter by target"
+              onChange={(e) => {
+                setTarget(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">Any target</option>
+              {vocab.target_type.map((v) => (
+                <option key={v} value={v}>
+                  {v.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <select
+              value={mobility}
+              aria-label="Filter by mobility"
+              onChange={(e) => {
+                setMobility(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">Any mobility</option>
+              {vocab.mobility.map((v) => (
+                <option key={v} value={v}>
+                  {v.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            {hasFilters && (
+              <button
+                className="mo-clear"
+                onClick={() => {
+                  setQuery("");
+                  setAction("");
+                  setTarget("");
+                  setMobility("");
+                  setPage(0);
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
         <p className="section-label">
-          {total.toLocaleString()} case{total === 1 ? "" : "s"}
+          {total.toLocaleString()} case{total === 1 ? "" : "s"}{hasFilters ? " match" : ""}
           {total > PAGE_SIZE && (
             <> · showing {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + rows.length}</>
           )}
@@ -169,7 +250,9 @@ export function MoView() {
             </li>
           ))}
           {rows.length === 0 && (
-            <li className="muted">{query ? `no FIR matches “${query}”` : "loading…"}</li>
+            <li className="muted">
+              {hasFilters ? "no FIR matches these filters" : "loading…"}
+            </li>
           )}
         </ul>
 

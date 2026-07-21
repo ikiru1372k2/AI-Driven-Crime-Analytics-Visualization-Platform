@@ -2019,3 +2019,29 @@ select:focus-visible {
   color: var(--muted);
   line-height: 1.4;
 }
+
+/* MO attribute filters — "find cases committed this way" */
+.mo-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+.mo-filters select {
+  flex: 1 1 45%;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.78rem;
+}
+.mo-clear {
+  background: none;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+}
