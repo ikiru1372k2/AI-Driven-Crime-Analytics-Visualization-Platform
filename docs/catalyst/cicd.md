@@ -30,16 +30,30 @@ push to main  →  CI (lint · tests · source-size gate · frontend build)
 GitHub runners have no `catalyst login` session, so the CLI authenticates
 from a token instead.
 
-1. On a machine where the CLI is logged in:
+### Recommended: reuse the existing CLI login (one command)
 
-   ```bash
-   catalyst token:generate
-   ```
+On the VM where `catalyst login` has already been run:
 
-   ⚠️ The device-code page **must be verified by the same Zoho account the
-   CLI is logged in as** (`catalyst whoami`). Verifying with a different
-   account fails with `TOKEN GENERATION FAILURE`, even if that account can
-   see the project. Use a private window to avoid the wrong auto-login.
+```bash
+node scripts/catalyst/print_cli_token.js | gh secret set CATALYST_TOKEN
+```
+
+The credential `catalyst login` stored is the same kind of refresh token
+`token:generate` mints, just encrypted with a machine-local key; the script
+decrypts it to the portable form and writes it **straight into the secret**
+— it never lands in a file, a log, or your shell history.
+
+### Alternative: mint a fresh token
+
+```bash
+catalyst token:generate
+```
+
+⚠️ The device-code page **must be verified by the same Zoho account the
+CLI is logged in as** (`catalyst whoami`). Verifying with a different
+account fails with `TOKEN GENERATION FAILURE`, even if that account can
+see the project — this bit us three times. Use a private window to avoid
+the wrong auto-login.
 
 2. Store it (never paste it into a file, issue, or PR):
 
