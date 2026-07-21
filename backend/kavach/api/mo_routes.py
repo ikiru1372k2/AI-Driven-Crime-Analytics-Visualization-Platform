@@ -99,6 +99,26 @@ def _envelope() -> dict:
     )
 
 
+@router.get("/vocabulary")
+def vocabulary() -> dict:
+    """Allowed values per filterable MO attribute.
+
+    Served from the schema so the console's filter options cannot drift from
+    what the extractor is permitted to produce (schema.py is the one source).
+    """
+    from kavach.analytics.mo.schema import ACTION, MOBILITY, TARGET, UNKNOWN
+
+    def options(vocab: tuple[str, ...]) -> list[str]:
+        # UNKNOWN is filterable too: "which FIRs never said how they travelled?"
+        return [v for v in vocab if v != "other"] if UNKNOWN in vocab else list(vocab)
+
+    return {
+        "crime_action": options(ACTION),
+        "target_type": options(TARGET),
+        "mobility": options(MOBILITY),
+    }
+
+
 @router.get("/runs/latest")
 def latest_run() -> dict:
     """Extraction run metrics: coverage, failures and UNKNOWN rates."""

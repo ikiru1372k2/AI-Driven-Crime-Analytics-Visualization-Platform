@@ -79,6 +79,16 @@ async function get<T>(path: string): Promise<T> {
 
 export const fetchMoRun = () => get<MoRun>("/api/v1/mo/runs/latest");
 
+export interface MoVocabulary {
+  crime_action: string[];
+  target_type: string[];
+  mobility: string[];
+}
+
+/** Filter options come from the schema, so they cannot drift from the values
+ *  the extractor is allowed to produce. */
+export const fetchMoVocabulary = () => get<MoVocabulary>("/api/v1/mo/vocabulary");
+
 export interface MoPage {
   total: number;
   offset: number;
@@ -93,6 +103,7 @@ export const fetchMoProfiles = (opts: {
   q?: string;
   action?: string;
   target?: string;
+  mobility?: string;
   limit?: number;
   offset?: number;
 } = {}) => {
@@ -100,6 +111,7 @@ export const fetchMoProfiles = (opts: {
   if (opts.q) p.set("q", opts.q);
   if (opts.action) p.set("action", opts.action);
   if (opts.target) p.set("target", opts.target);
+  if (opts.mobility) p.set("mobility", opts.mobility);
   p.set("limit", String(opts.limit ?? 40));
   p.set("offset", String(opts.offset ?? 0));
   return get<MoPage>(`/api/v1/mo/profiles?${p}`);
