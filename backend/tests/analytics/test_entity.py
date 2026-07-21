@@ -26,6 +26,7 @@ def planted(tmp_path_factory):
     prev = os.environ.get("KAVACH_DATA_DIR")
     os.environ["KAVACH_DATA_DIR"] = str(out)
     data.enriched_cases.cache_clear()
+    resolve_identities.cache_clear()
     gt = json.loads((out / "ground_truth.json").read_text())
     yield gt
     if prev is None:
@@ -33,6 +34,7 @@ def planted(tmp_path_factory):
     else:
         os.environ["KAVACH_DATA_DIR"] = prev
     data.enriched_cases.cache_clear()
+    resolve_identities.cache_clear()
 
 
 def _cluster_of(result, accused_id):

@@ -1716,3 +1716,9 @@ select:focus-visible {
   padding: 0.45rem 0.7rem;
   cursor: pointer;
 }
+
+/* Decision-trail empty state has no status dot, so it must not sit in the
+   narrow first grid column (it wrapped one word per line). */
+.ev-activity li.muted {
+  display: block;
+}
