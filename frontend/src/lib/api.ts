@@ -268,8 +268,8 @@ export interface IdentityCandidate {
   name_variants: string[];
   age_range: [number, number] | null;
   districts: string[];
-  members: IdentityMember[];
-  signals: IdentitySignal[];
+  members?: IdentityMember[];
+  signals?: IdentitySignal[];
 }
 
 export interface IdentitiesResponse {
@@ -281,4 +281,10 @@ export interface IdentitiesResponse {
   candidates: IdentityCandidate[];
 }
 
+/** Review queue. The list omits per-candidate evidence (members/signals) —
+ *  that is 88% of the payload (1.1 MB for 512 candidates) and is only needed
+ *  for the row an analyst expands, which fetchIdentityDetail supplies. */
 export const fetchIdentities = () => getJSON<IdentitiesResponse>("/api/identities");
+
+export const fetchIdentityDetail = (clusterId: string) =>
+  getJSON<IdentityCandidate>(`/api/identities/${encodeURIComponent(clusterId)}`);
