@@ -286,3 +286,39 @@ def test_evidence_rows_cite_their_source_case(dataset):
 
 def test_unknown_rate_helper_on_empty_input():
     assert unknown_rate([]) == {}
+
+
+# -- precomputed profiles (Zia runs offline; see scripts/mo_precompute.py) --
+def test_precomputed_profiles_are_revalidated_on_load(dataset, tmp_path):
+    """A shipped file is re-validated, never trusted just because it is on disk."""
+    from kavach.analytics.mo.runner import load_precomputed
+
+    good = extract(5001, CHAIN_SNATCH, parse_signal(ZIA_KEYWORDS, ZIA_NER)).profile
+    payload = {
+        "model_version": MODEL_VERSION,
+        "profiles": [
+            json.loads(good.model_dump_json()),
+            {"case_master_id": 999, "extractor": "ZIA_TEXT_ANALYTICS"},  # malformed
+        ],
+    }
+    path = tmp_path / "mo_profiles.json"
+    path.write_text(json.dumps(payload))
+
+    conn = connect()
+    prov = ProvenanceRepository(conn)
+    result = load_precomputed(conn, prov, path)
+
+    assert result.processed == 1          # the valid one
+    assert result.failed == 1             # the malformed one rejected
+    assert result.zia_used == 1           # Zia attribution preserved
+    stored = MoRepository(conn).all_profiles()
+    assert len(stored) == 1 and stored[0].extractor == EXTRACTOR_ZIA
+
+
+def test_corrupt_precomputed_file_falls_back(dataset, tmp_path):
+    from kavach.analytics.mo.runner import load_precomputed
+
+    path = tmp_path / "broken.json"
+    path.write_text("{not json")
+    conn = connect()
+    assert load_precomputed(conn, ProvenanceRepository(conn), path) is None

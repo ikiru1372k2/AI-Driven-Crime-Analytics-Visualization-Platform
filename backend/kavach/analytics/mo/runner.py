@@ -11,10 +11,13 @@ recorded as factors and limitations — the drift indicator #38 asks for.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 
 from kavach.analytics.mo.extractor import (
     METHOD_NAME,
@@ -24,7 +27,7 @@ from kavach.analytics.mo.extractor import (
     unknown_rate,
 )
 from kavach.analytics.mo.repository import MoRepository
-from kavach.analytics.mo.schema import MoValidationError
+from kavach.analytics.mo.schema import MoValidationError, validate_extraction
 from kavach.analytics.mo.zia import ZiaClient, ZiaUnavailable
 from kavach.provenance import (
     DataClassification,
@@ -35,6 +38,88 @@ from kavach.provenance import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: Profiles extracted with Zia ahead of deployment (scripts/mo_precompute.py).
+#: The deployed runtime cannot reach Zia — zcatalyst_sdk.initialize() needs
+#: Catalyst platform headers that only accompany authenticated requests — so
+#: the Zia-derived profiles are produced offline against the real project and
+#: shipped with the bundle. Absent file => deterministic extraction at startup.
+PRECOMPUTED_ENV = "KAVACH_MO_PROFILES"
+
+
+def precomputed_path() -> Path | None:
+    """Location of the precomputed profile file, if one is configured/present."""
+    candidates = [
+        *( [Path(os.environ[PRECOMPUTED_ENV])] if os.environ.get(PRECOMPUTED_ENV) else [] ),
+        Path.cwd() / "data/mo_profiles.json",
+        Path(__file__).resolve().parents[4] / "data/mo_profiles.json",
+    ]
+    return next((c for c in candidates if c.is_file()), None)
+
+
+def load_precomputed(
+    conn: sqlite3.Connection,
+    provenance: ProvenanceRepository,
+    path: Path,
+) -> ExtractionRunResult | None:
+    """Register precomputed profiles under a provenance run.
+
+    Every profile is re-validated on load: a file that drifted from the schema
+    is rejected wholesale rather than trusted because it is on disk.
+    """
+    try:
+        payload = json.loads(path.read_text())
+        raw_profiles = payload["profiles"]
+    except (OSError, ValueError, KeyError) as exc:
+        logger.warning("precomputed MO profiles unusable (%s): %s", path, exc)
+        return None
+
+    repo = MoRepository(conn)
+    now = datetime.now(UTC)
+    result = ExtractionRunResult(run_id="")
+    profiles = []
+
+    with intelligence_run(
+        provenance,
+        intelligence_type=IntelligenceType.MO_PROFILE,
+        method_name=METHOD_NAME,
+        method_version=payload.get("model_version", MODEL_VERSION),
+        model_version=payload.get("model_version", MODEL_VERSION),
+        analysis_window_from=now,
+        analysis_window_to=now,
+    ) as run:
+        result.run_id = run.run_id
+        for raw in raw_profiles:
+            try:
+                profile = validate_extraction(raw)
+            except MoValidationError as exc:
+                result.failed += 1
+                repo.record_failure(
+                    int(raw.get("case_master_id", -1)), MODEL_VERSION, str(exc), run.run_id
+                )
+                continue
+            repo.save(profile, run.run_id)
+            profiles.append(profile)
+            result.processed += 1
+            if profile.extractor == "ZIA_TEXT_ANALYTICS":
+                result.zia_used += 1
+            run.emit(
+                result_ref=f"mo:{profile.case_master_id}",
+                evidence_case_ids=[profile.case_master_id],
+                factors=[
+                    Factor(name=n, contribution=float(getattr(profile, n).confidence))
+                    for n in ("crime_action", "target_type", "mobility")
+                ],
+                limitations=(
+                    "AI_DERIVED from the FIR narrative only; not a finding of fact",
+                    "synthetic data (ADR-011)",
+                ),
+                classification=DataClassification.AI_DERIVED,
+            )
+        result.unknown_rates = unknown_rate(profiles)
+
+    logger.info("loaded %d precomputed MO profiles from %s", result.processed, path)
+    return result
 
 
 @dataclass
