@@ -15,6 +15,7 @@ without changing the enforcement logic.
 from __future__ import annotations
 
 import functools
+import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +34,33 @@ from kavach.provenance import ProvenanceRepository
 from kavach.repositories.dev_fixture import connect
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _manifest_path() -> Path:
+    """Locate the schema manifest in both the repo and the deployed bundle.
+
+    The repo layout (backend/kavach/api/… -> ../../../docs) does not exist on
+    AppSail, where kavach/ sits at the bundle root. Getting this wrong made
+    every graph/evidence endpoint 500 in production while passing locally, so
+    the candidates are explicit and the error names what is missing.
+    """
+    env = os.environ.get("KAVACH_SCHEMA_MANIFEST")
+    candidates = [
+        *( [Path(env)] if env else [] ),
+        _REPO_ROOT / "docs/schema/schema-manifest.json",          # repo checkout
+        Path.cwd() / "docs/schema/schema-manifest.json",          # bundle root
+        Path(__file__).resolve().parents[2] / "docs/schema/schema-manifest.json",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "schema-manifest.json not found; looked in: "
+        + ", ".join(str(c) for c in candidates)
+        + " (set KAVACH_SCHEMA_MANIFEST to override)"
+    )
+
+
 MANIFEST_PATH = _REPO_ROOT / "docs/schema/schema-manifest.json"
 
 _lock = threading.Lock()
@@ -55,7 +83,7 @@ class GraphContext:
 def _build() -> GraphContext:
     # served read-only from FastAPI worker threads after this build
     conn = connect(check_same_thread=False)
-    load_dataset(data_dir(), MANIFEST_PATH, conn)
+    load_dataset(data_dir(), _manifest_path(), conn)
     provenance = ProvenanceRepository(conn)
     projection = project_graph(conn, provenance)
     metrics_result = compute_metrics(conn, provenance)
