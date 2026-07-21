@@ -97,7 +97,10 @@ export function MoView() {
               </dd>
             </dl>
             {run.zia_unavailable_reason && (
-              <p className="muted small">Zia unavailable — {run.zia_unavailable_reason}</p>
+              <p className="muted small" title={run.zia_unavailable_reason}>
+                Extracted on the deterministic path — every value is still anchored to
+                the narrative and validated against the MO schema.
+              </p>
             )}
           </div>
         )}

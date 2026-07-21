@@ -21,7 +21,11 @@ from kavach.analytics.mo import (
     MoRepository,
     run_extraction,
 )
-from kavach.analytics.mo.runner import ExtractionRunResult
+from kavach.analytics.mo.runner import (
+    ExtractionRunResult,
+    load_precomputed,
+    precomputed_path,
+)
 from kavach.analytics.mo.zia import ZiaClient
 from kavach.api import data
 from kavach.api.envelope import envelope
@@ -41,17 +45,28 @@ _MO_LIMITATIONS = (
 
 @functools.lru_cache(maxsize=1)
 def _store() -> tuple[MoRepository, ExtractionRunResult]:
-    """Extract once per process, then serve from memory.
+    """Load (or extract) profiles once per process, then serve from memory.
 
-    Zia needs Catalyst request headers that are unavailable at startup, so the
-    batch runs on the deterministic path and per-request Zia enrichment is a
-    later refinement (#39/#64). The extractor records which path produced each
-    profile, so the distinction is never hidden.
+    zcatalyst_sdk.initialize() requires Catalyst platform headers that only
+    accompany authenticated requests, so a deployed runtime cannot call Zia
+    while building this cache. Zia therefore runs offline against the real
+    project (scripts/mo_precompute.py) and its output ships with the bundle;
+    without that file the deterministic extractor runs instead. Either way the
+    profile records which extractor produced it — the difference is never
+    hidden from the analyst.
     """
     conn = connect(check_same_thread=False)
     provenance = ProvenanceRepository(conn)
-    narratives = data.case_narratives()
-    result = run_extraction(conn, provenance, narratives, zia=_zia_client())
+
+    # Prefer profiles extracted with Zia ahead of deployment; they are
+    # re-validated on load, so a stale file cannot smuggle in bad data.
+    path = precomputed_path()
+    if path is not None:
+        loaded = load_precomputed(conn, provenance, path)
+        if loaded is not None and loaded.processed:
+            return MoRepository(conn), loaded
+
+    result = run_extraction(conn, provenance, data.case_narratives(), zia=_zia_client())
     return MoRepository(conn), result
 
 

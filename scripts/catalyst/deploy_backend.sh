@@ -44,6 +44,20 @@ if [ "${SKIP_CONSOLE:-0}" != "1" ]; then
   cp -r "$ROOT/frontend/dist/." "$BUILD/web/"
 fi
 
+# -- precomputed MO profiles ---------------------------------------------------
+# Zia cannot be reached from the deployed runtime (the SDK needs Catalyst
+# platform headers that only accompany authenticated requests), so the
+# Zia-derived profiles are produced offline by scripts/mo_precompute.py and
+# shipped here. Without this file the app falls back to deterministic
+# extraction at startup — correct, just not Zia-attributed.
+if [ -f "$ROOT/data/mo_profiles.json" ]; then
+  mkdir -p "$BUILD/data"
+  cp "$ROOT/data/mo_profiles.json" "$BUILD/data/mo_profiles.json"
+  echo "shipping precomputed MO profiles ($(du -h "$ROOT/data/mo_profiles.json" | cut -f1))"
+else
+  echo "note: no data/mo_profiles.json — MO will use the deterministic extractor" >&2
+fi
+
 # -- schema manifest -----------------------------------------------------------
 # The ingestion path validates every CSV against this manifest. It lives under
 # docs/ in the repo, which is NOT part of the bundle — omitting it made every
@@ -106,6 +120,7 @@ cat > "$BUILD/app-config.json" <<JSON
     "KAVACH_DATA_DIR": "data/synthetic",
     "KAVACH_WEB_DIR": "web",
     "KAVACH_SCHEMA_MANIFEST": "docs/schema/schema-manifest.json",
+    "KAVACH_MO_PROFILES": "data/mo_profiles.json",
     "KAVACH_DEMO_IDENTITY": "${KAVACH_DEMO_IDENTITY:-demo-state-analyst}"
   },
   "memory": 512
