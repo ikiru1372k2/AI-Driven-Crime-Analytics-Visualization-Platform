@@ -5,7 +5,12 @@
  * analyst accepts or rejects — nothing is auto-merged (human-in-the-loop).
  */
 import { useEffect, useMemo, useState } from "react";
-import { fetchIdentities, type IdentitiesResponse, type IdentityCandidate } from "../lib/api";
+import {
+  fetchIdentities,
+  fetchIdentityDetail,
+  type IdentitiesResponse,
+  type IdentityCandidate,
+} from "../lib/api";
 import { fetchDecisions, postDecision } from "../lib/evidenceApi";
 
 type Decision = "accepted" | "rejected";
@@ -16,6 +21,9 @@ export function IdentityReview() {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  // Per-candidate evidence is fetched on expand: shipping it for all 512
+  // candidates was 88% of a 1.1 MB response and made the queue slow to load.
+  const [details, setDetails] = useState<Record<string, IdentityCandidate>>({});
 
   useEffect(() => {
     fetchIdentities().then(setData).catch((e) => setError(String(e)));
@@ -91,8 +99,17 @@ export function IdentityReview() {
             key={c.cluster_id}
             c={c}
             open={expanded === c.cluster_id}
+            detail={details[c.cluster_id]}
             decision={decisions[c.cluster_id]}
-            onToggle={() => setExpanded(expanded === c.cluster_id ? null : c.cluster_id)}
+            onToggle={() => {
+              const next = expanded === c.cluster_id ? null : c.cluster_id;
+              setExpanded(next);
+              if (next && !details[next]) {
+                fetchIdentityDetail(next)
+                  .then((d) => setDetails((prev) => ({ ...prev, [next]: d })))
+                  .catch(() => {});
+              }
+            }}
             onDecide={(d) => decide(c.cluster_id, d)}
           />
         ))}
@@ -105,17 +122,22 @@ export function IdentityReview() {
 function IdentityCard({
   c,
   open,
+  detail,
   decision,
   onToggle,
   onDecide,
 }: {
   c: IdentityCandidate;
   open: boolean;
+  /** evidence fetched on expand; undefined until it arrives */
+  detail?: IdentityCandidate;
   decision?: Decision;
   onToggle: () => void;
   onDecide: (d: Decision) => void;
 }) {
   const crossDistrict = c.districts.length > 1;
+  const members = detail?.members;
+  const signals = detail?.signals;
   return (
     <article className={"id-card" + (decision ? ` ${decision}` : "")}>
       <button className="id-summary" onClick={onToggle} aria-expanded={open}>
@@ -138,8 +160,9 @@ function IdentityCard({
           </div>
 
           <div className="section-label">Records</div>
+          {!members && <div className="muted small">loading evidence…</div>}
           <div className="id-members">
-            {c.members.map((m) => (
+            {(members ?? []).map((m) => (
               <div className="id-member" key={m.accused_id}>
                 <span className="mn">{m.name}</span>
                 <span className="ma">{m.age ?? "?"}</span>
@@ -151,7 +174,7 @@ function IdentityCard({
 
           <div className="section-label">Match signals</div>
           <div className="id-signals">
-            {c.signals.slice(0, 8).map((s, i) => (
+            {(signals ?? []).slice(0, 8).map((s, i) => (
               <div className="sig" key={i}>
                 <span className="sig-score">{(s.score * 100).toFixed(0)}%</span>
                 <span className="sig-body">

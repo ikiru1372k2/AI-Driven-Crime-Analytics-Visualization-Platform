@@ -6,7 +6,7 @@ All responses are derived from SYNTHETIC data (ADR-011).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from kavach.analytics.association import find_associations
 from kavach.analytics.entity import resolve_identities
@@ -164,13 +164,49 @@ def get_associations(
     )
 
 
+#: Per-candidate evidence (member records + pairwise signals) is 88% of the
+#: identities payload — 1.1 MB for 512 candidates — but the queue only needs
+#: it for the ONE candidate an analyst expands. The list omits it by default
+#: and /identities/{cluster_id} serves it on demand.
+_HEAVY_CANDIDATE_FIELDS = ("members", "signals")
+
+
 @router.get("/identities")
 def get_identities(
     district_id: int | None = Query(default=None),
     min_cluster_size: int = Query(default=2, ge=2, le=20),
+    detail: bool = Query(
+        default=False,
+        description="include member records + signals for every candidate "
+        "(large; the review queue fetches these per candidate instead)",
+    ),
 ) -> dict:
     """Candidate cross-FIR identities for human review (explainable, no auto-merge)."""
-    return resolve_identities(district_id=district_id, min_cluster_size=min_cluster_size)
+    result = resolve_identities(district_id=district_id, min_cluster_size=min_cluster_size)
+    if detail:
+        return result
+    return {
+        **result,
+        "candidates": [
+            {k: v for k, v in c.items() if k not in _HEAVY_CANDIDATE_FIELDS}
+            for c in result["candidates"]
+        ],
+        "detail_omitted": True,
+    }
+
+
+@router.get("/identities/{cluster_id}")
+def get_identity_detail(
+    cluster_id: str,
+    district_id: int | None = Query(default=None),
+    min_cluster_size: int = Query(default=2, ge=2, le=20),
+) -> dict:
+    """One candidate with its full evidence — fetched when a row is expanded."""
+    result = resolve_identities(district_id=district_id, min_cluster_size=min_cluster_size)
+    for candidate in result["candidates"]:
+        if str(candidate["cluster_id"]) == cluster_id:
+            return candidate
+    raise HTTPException(status_code=404, detail=f"unknown identity cluster {cluster_id}")
 
 
 @router.get("/districts")

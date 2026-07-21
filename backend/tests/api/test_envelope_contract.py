@@ -145,3 +145,30 @@ def test_envelope_documented_in_openapi(client):
     # examples per classification ship with the envelope model definition
     examples = IntelligenceEnvelope.model_json_schema().get("examples", [])
     assert {e["classification"] for e in examples} == {c.value for c in DataClassification}
+
+
+def test_identities_list_omits_heavy_evidence(client):
+    """The review queue must not ship members/signals for every candidate:
+    that was 88% of a 1.1 MB response and made the tab look hung."""
+    body = client.get("/api/identities").json()
+    assert body["candidates"], "expected candidates"
+    assert body["detail_omitted"] is True
+    for c in body["candidates"]:
+        assert "members" not in c and "signals" not in c
+        assert c["cluster_id"] and c["name_variants"]  # list still renderable
+
+
+def test_identity_detail_serves_evidence_per_candidate(client):
+    listed = client.get("/api/identities").json()["candidates"][0]
+    detail = client.get(f"/api/identities/{listed['cluster_id']}").json()
+    assert detail["cluster_id"] == listed["cluster_id"]
+    assert detail["members"] and detail["signals"]
+
+
+def test_unknown_identity_cluster_404(client):
+    assert client.get("/api/identities/no-such-cluster").status_code == 404
+
+
+def test_identities_detail_flag_restores_full_payload(client):
+    full = client.get("/api/identities", params={"detail": "true"}).json()
+    assert "members" in full["candidates"][0]
