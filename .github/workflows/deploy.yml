@@ -32,6 +32,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
+      # A fresh runner has no CLI config, and the CLI then defaults to the US
+      # data centre (util_modules/dc.js). AI-KSP lives in IN, so every API
+      # call would hit the wrong region. Pin it explicitly.
+      CATALYST_ACTIVE_DC: ${{ vars.CATALYST_ACTIVE_DC || 'in' }}
       CATALYST_PROJECT_ID: ${{ vars.CATALYST_PROJECT_ID || '42171000000017001' }}
       CATALYST_ORG_ID: ${{ vars.CATALYST_ORG_ID || '60078928452' }}
       APPSAIL_URL: ${{ vars.APPSAIL_URL || 'https://kavach-analytics-50044141253.development.catalystappsail.in' }}
@@ -47,7 +51,20 @@ jobs:
         run: |
           if [ -z "$CATALYST_TOKEN" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Deploy skipped::CATALYST_TOKEN secret is not set — see issue #84"
+            echo "::warning title=NOTHING WAS DEPLOYED::CATALYST_TOKEN secret is not set"
+            {
+              echo "## ⚠️ Nothing was deployed"
+              echo
+              echo "The \`CATALYST_TOKEN\` secret is not set, so every deploy step was"
+              echo "skipped. **The live site still runs the previous build.**"
+              echo
+              echo "Fix (one time):"
+              echo '```bash'
+              echo "node scripts/catalyst/print_cli_token.js | gh secret set CATALYST_TOKEN"
+              echo '```'
+              echo
+              echo "See \`docs/catalyst/cicd.md\`."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
@@ -85,7 +102,7 @@ jobs:
         # CLI authenticates from $CATALYST_TOKEN instead.
         run: |
           mkdir -p .catalyst-app
-          printf '{\n  "project_id": %s,\n  "project_name": "AI-KSP"\n}\n' \
+          printf '{\n  "project_id": "%s",\n  "project_name": "AI-KSP"\n}\n' \
             "$CATALYST_PROJECT_ID" > .catalyst-app/catalyst.json
 
       - name: Verify Data Store schema parity
