@@ -172,3 +172,37 @@ def test_unknown_identity_cluster_404(client):
 def test_identities_detail_flag_restores_full_payload(client):
     full = client.get("/api/identities", params={"detail": "true"}).json()
     assert "members" in full["candidates"][0]
+
+
+# -- MO extraction API (MO-002/#38) ---------------------------------------
+def test_mo_profile_serves_narrative_with_spans(client):
+    from kavach.api.mo_routes import reset_mo_store
+
+    reset_mo_store()
+    listing = client.get("/api/v1/mo/profiles", params={"limit": 5}).json()
+    assert listing["profiles"], "extraction should produce profiles"
+    case_id = listing["profiles"][0]["case_master_id"]
+
+    body = client.get(f"/api/v1/mo/{case_id}").json()
+    assert body["narrative"]
+    profile = body["profile"]
+    assert profile["model_version"] and profile["extractor"] and profile["extracted_at"]
+    # any span must index back into the narrative that produced it
+    for key in ("crime_action", "target_type", "mobility"):
+        span = profile[key].get("source_span")
+        if span:
+            assert body["narrative"][span[0] : span[1]]
+    reset_mo_store()
+
+
+def test_mo_response_is_ai_derived_with_model_version(client):
+    """AI_DERIVED is refused by the envelope without a model_version."""
+    env = IntelligenceEnvelope.model_validate(
+        client.get("/api/v1/mo/runs/latest").json()["intelligence"]
+    )
+    assert env.classification is DataClassification.AI_DERIVED
+    assert env.method.model_version
+
+
+def test_mo_unknown_case_404(client):
+    assert client.get("/api/v1/mo/99999999").status_code == 404

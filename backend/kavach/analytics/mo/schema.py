@@ -75,7 +75,10 @@ class MoProfile(BaseModel):
 
     case_master_id: int
     schema_version: Literal["mo-schema-v1"] = SCHEMA_VERSION
-    extractor: Literal["QUICKML_LLM", "RULE_BASED"]
+    # ZIA_TEXT_ANALYTICS added for MO-002/#38 (Catalyst-native extraction).
+    # Widening this enum leaves every stored v1 profile valid, so
+    # SCHEMA_VERSION is deliberately NOT bumped — the contract only grew.
+    extractor: Literal["QUICKML_LLM", "RULE_BASED", "ZIA_TEXT_ANALYTICS"]
     model_version: str
     extracted_at: str  # ISO timestamp, set by the extraction service
 

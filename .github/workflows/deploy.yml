@@ -157,7 +157,7 @@ jobs:
           # Graph + evidence build the projection from the bundled manifest.
           # These 500'd in production while passing locally (docs/ was not
           # shipped), so the pipeline now proves them on every deploy.
-          for path in "/api/v1/graph/subgraph?seed_type=CASE&seed_id=7231" "/api/v1/evidence/runs"; do
+          for path in "/api/v1/graph/subgraph?seed_type=CASE&seed_id=7231" "/api/v1/evidence/runs" "/api/v1/mo/runs/latest"; do
             code=$(curl -s -m 180 -o /tmp/probe.json -w '%{http_code}' "$APPSAIL_URL$path")
             [ "$code" = "200" ] || { echo "FAILED $path -> $code"; head -c 300 /tmp/probe.json; exit 1; }
             echo "ok $path"

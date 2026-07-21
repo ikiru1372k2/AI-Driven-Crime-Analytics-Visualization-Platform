@@ -29,6 +29,7 @@ session state; recreate with `catalyst init --project 42171000000017001
 | IaC export/import | VERIFIED | `iac:export` produced project template zip |
 | CLI token (`token:generate`) | LIMITED | device-flow verification must be completed by the **same Zoho account as the CLI login**; needed only for CI (`CATALYST_TOKEN` env is supported by the CLI) |
 | Catalyst SDK in AppSail | LIMITED | `zcatalyst_sdk.initialize(req=headers)` needs Catalyst headers, which are absent on direct AppSail URLs — they arrive via the authenticated path (#19/#20). Analytics use the bundled dataset meanwhile. |
+| **Zia text analytics** | **VERIFIED (live)** | keyword-extraction + NER probed on AI-KSP 2026-07-21; NER returns character offsets **and** confidence scores. Powers MO extraction (#38). |
 | NoSQL / QuickML / Signals / Circuits / Cron / Push / Auth | PENDING | probed during their issues (#39/#38/#71/#72/#73/#74/#19) |
 
 ## Live URLs
