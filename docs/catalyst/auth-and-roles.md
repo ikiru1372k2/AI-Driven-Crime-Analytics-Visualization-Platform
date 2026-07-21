@@ -80,6 +80,32 @@ For the hosted demo, replace the `user_id` values with the Catalyst user
 ids of the real seeded accounts (Catalyst console → Authentication → Users),
 then re-run the seeding script.
 
+## Deployed demo mode (explicit, documented, not a security control)
+
+The console has no sign-in screen yet (#60), so on the deployed demo the
+backend is started with:
+
+```
+KAVACH_DEMO_IDENTITY=demo-state-analyst
+```
+
+With it set, a request carrying **no** Catalyst session is treated as that
+one named analyst. A real Catalyst session always takes precedence.
+
+Why this is acceptable here, and where the line is:
+
+- the deployed data is SYNTHETIC (ADR-011) — there are no real FIRs to leak;
+- the identity granted is an ordinary analyst, **not** `SYSTEM_ADMIN`, so the
+  strongest control still holds: `/api/v1/audit` returns **403** on the live
+  deployment. Authorization is genuinely enforced, not stubbed out;
+- decisions remain attributable — the audit trail records
+  `demo-state-analyst (SCRB_STATE_ANALYST)`, not an anonymous actor;
+- it is off unless the variable is set, and a startup warning is logged.
+
+**Never set this variable on a deployment holding real FIR data.** It exists
+so the demo can open a node detail panel and record a review decision; it
+disappears the moment the login flow (#60) lands.
+
 ## Status
 
 Middleware, role model, scope enforcement, deny-by-default and the demo

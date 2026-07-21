@@ -1,9 +1,11 @@
 """FastAPI application entry point (Catalyst AppSail target, ADR-010)."""
 
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from kavach import __version__
 from kavach.api.audit_routes import router as audit_router
@@ -48,16 +50,21 @@ app.include_router(audit_router)
 app.include_router(evidence_router)
 
 
+_WEB_DIR = Path(os.environ.get("KAVACH_WEB_DIR", Path(__file__).resolve().parents[2] / "web"))
+
+
 @app.on_event("startup")
 def _seed_dev_auth() -> None:
-    """Local dev only: seed the demo role assignments so header-based dev
-    identities (x-kavach-dev-user) resolve to a role + scope. Gated on the same
-    explicit opt-in as DevValidator, so it never runs in a Catalyst runtime."""
+    """Seed the demo role assignments so demo identities resolve to a role and
+    scope. Runs for the local dev path (x-kavach-dev-user) and for a deployed
+    demo (KAVACH_DEMO_IDENTITY) — both are explicit opt-ins; with neither set
+    nothing is seeded and every identity must come from Catalyst Auth."""
     from kavach.auth import role_repo
     from kavach.auth.demo_users import seed_demo_assignments
-    from kavach.auth.validator import is_catalyst_runtime
+    from kavach.auth.validator import demo_identity, is_catalyst_runtime
 
-    if os.environ.get("KAVACH_DEV_AUTH") == "1" and not is_catalyst_runtime():
+    local_dev = os.environ.get("KAVACH_DEV_AUTH") == "1" and not is_catalyst_runtime()
+    if local_dev or demo_identity():
         seed_demo_assignments(role_repo())
 
 
@@ -107,3 +114,22 @@ def health_datastore(request: Request) -> dict:
         return {"status": "ok", "sample_query": "COUNT(CaseMaster)", "result": rows}
     except Exception as exc:  # pragma: no cover - live-environment path
         return {"status": "error", "detail": f"{type(exc).__name__}: {exc}"}
+
+
+# -- console (single-origin hosting) ------------------------------------------
+# Registered LAST, deliberately: a mount at "/" matches any path not already
+# claimed, so declaring it earlier swallows /health and every later route.
+#
+# The built SPA ships inside the deployment bundle and is served by THIS app,
+# so console and API share one origin. Two reasons:
+#
+#  1. No CORS. Hosting the console separately made every API call
+#     cross-origin, and AppSail's proxy appends its own
+#     Access-Control-Allow-Origin on top of the app's — browsers reject the
+#     duplicated header ("contains multiple values"), so the hosted console
+#     could not reach its API at all.
+#  2. The console answers at "/" instead of "/app/index.html".
+#
+# No-op in local dev, where Vite serves the UI and this directory is absent.
+if (_WEB_DIR / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=_WEB_DIR, html=True), name="console")

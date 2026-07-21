@@ -4,8 +4,16 @@
  * backend already allows the Vite dev origin (:5173). All data is SYNTHETIC.
  */
 
-export const API_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8000";
+const configuredBase = import.meta.env.VITE_API_BASE as string | undefined;
+
+/** Where API calls go.
+ *
+ *  - unset            -> the local FastAPI dev server (Vite dev path)
+ *  - "" (empty)       -> RELATIVE, i.e. same origin as the page. The deployed
+ *                        build uses this: AppSail serves the console and the
+ *                        API together, which avoids CORS entirely.
+ *  - an absolute URL  -> that origin (e.g. a gateway base). */
+export const API_BASE = configuredBase === undefined ? "http://127.0.0.1:8000" : configuredBase;
 
 export interface CrimeSubHead {
   subhead_id: string;
@@ -107,7 +115,9 @@ export const DEV_AUTH_HEADERS: Record<string, string> = import.meta.env.DEV
   : {};
 
 async function getJSON<T>(path: string, params: Record<string, unknown> = {}): Promise<T> {
-  const url = new URL(API_BASE + path);
+  // second arg matters when API_BASE is "" (same-origin deployment): a bare
+  // "/api/…" is not a valid absolute URL on its own
+  const url = new URL(API_BASE + path, window.location.origin);
   for (const [k, v] of Object.entries(params)) {
     if (v !== null && v !== undefined && v !== "") url.searchParams.set(k, String(v));
   }

@@ -28,6 +28,22 @@ mkdir -p "$BUILD"
 cp -r "$ROOT/backend/kavach" "$BUILD/kavach"
 find "$BUILD" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 
+# -- console (single-origin) ---------------------------------------------------
+# The built SPA ships with the API so both share one origin. Cross-origin
+# hosting is not viable here: AppSail's proxy appends its own
+# Access-Control-Allow-Origin on top of the app's, and a duplicated header
+# makes browsers refuse every API call. Same origin => no CORS, and the
+# console answers at "/" rather than "/app/index.html".
+#
+# VITE_API_BASE="" makes the client call the API relatively; --base ./ keeps
+# asset URLs relative to wherever the app is served from.
+if [ "${SKIP_CONSOLE:-0}" != "1" ]; then
+  echo "building console for single-origin hosting …"
+  ( cd "$ROOT/frontend" && npm ci --silent && VITE_API_BASE="" npx vite build --base ./ )
+  mkdir -p "$BUILD/web"
+  cp -r "$ROOT/frontend/dist/." "$BUILD/web/"
+fi
+
 # -- synthetic dataset (~1 MB) -------------------------------------------------
 # The deployed analytics read the generated CSVs through KAVACH_DATA_DIR (the
 # LOCAL adapter). The data is SYNTHETIC by design (ADR-011), so shipping it
@@ -80,7 +96,9 @@ cat > "$BUILD/app-config.json" <<JSON
   "build_path": ".",
   "env_variables": {
     "KAVACH_ENV": "catalyst",
-    "KAVACH_DATA_DIR": "data/synthetic"
+    "KAVACH_DATA_DIR": "data/synthetic",
+    "KAVACH_WEB_DIR": "web",
+    "KAVACH_DEMO_IDENTITY": "${KAVACH_DEMO_IDENTITY:-demo-state-analyst}"
   },
   "memory": 512
 }
