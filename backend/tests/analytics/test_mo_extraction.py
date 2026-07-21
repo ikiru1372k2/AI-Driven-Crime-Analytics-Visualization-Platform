@@ -322,3 +322,86 @@ def test_corrupt_precomputed_file_falls_back(dataset, tmp_path):
     path.write_text("{not json")
     conn = connect()
     assert load_precomputed(conn, ProvenanceRepository(conn), path) is None
+
+
+# -- MO similarity: "show related" (MO-004/#40) ----------------------------
+def _profile(case_id, **overrides):
+    """Build a profile with the given attribute values (rest UNKNOWN)."""
+    base = {
+        "case_master_id": case_id,
+        "extractor": EXTRACTOR_RULES,
+        "model_version": MODEL_VERSION,
+        "extracted_at": "2026-07-21T00:00:00Z",
+    }
+    fields = ("offender_count", "mobility", "approach_method", "crime_action",
+              "target_type", "escape_direction", "time_context", "weapon_involved")
+    for f in fields:
+        base[f] = {"value": overrides.get(f, UNKNOWN), "confidence": 0.9}
+    return validate_extraction(base)
+
+
+def test_unknown_never_counts_as_similarity():
+    """Two narratives that both omitted a weapon have not agreed on anything."""
+    from kavach.analytics.mo.similarity import compare
+
+    a = _profile(1, crime_action="theft", target_type="cash")
+    b = _profile(2, crime_action="theft", target_type="cash")
+    match = compare(a, b)
+    assert match is not None
+    assert "weapon_involved" in match.uncomparable
+    assert "weapon_involved" not in match.matched
+
+
+def test_similarity_requires_more_than_one_shared_attribute():
+    """'both are thefts' is not a lead."""
+    from kavach.analytics.mo.similarity import compare
+
+    a = _profile(1, crime_action="theft")
+    b = _profile(2, crime_action="theft")
+    assert compare(a, b) is None
+
+
+def test_matching_signature_scores_above_generic_overlap():
+    from kavach.analytics.mo.similarity import compare
+
+    target = _profile(1, crime_action="snatching", target_type="gold_chain",
+                      mobility="motorcycle")
+    twin = _profile(2, crime_action="snatching", target_type="gold_chain",
+                    mobility="motorcycle")
+    partial = _profile(3, crime_action="snatching", target_type="gold_chain",
+                       mobility="car")
+    assert compare(target, twin).score == 1.0
+    assert compare(target, partial).score < compare(target, twin).score
+
+
+def test_find_similar_excludes_self_and_ranks_best_first():
+    from kavach.analytics.mo.similarity import find_similar
+
+    target = _profile(1, crime_action="snatching", target_type="gold_chain",
+                      mobility="motorcycle")
+    corpus = [
+        target,
+        _profile(2, crime_action="snatching", target_type="gold_chain", mobility="motorcycle"),
+        _profile(3, crime_action="snatching", target_type="gold_chain", mobility="car"),
+        _profile(4, crime_action="fraud", target_type="cash"),
+    ]
+    matches = find_similar(target, corpus)
+    assert 1 not in [m.case_master_id for m in matches]      # never itself
+    assert matches[0].case_master_id == 2                     # exact MO first
+    assert matches[0].score >= matches[-1].score
+    assert matches[0].explanation.startswith("same ")
+    assert "crime action" in matches[0].explanation
+
+
+def test_related_finds_the_planted_serial_pattern(dataset):
+    """The 25 planted chain-snatchings should surface each other."""
+    from kavach.analytics.mo.similarity import find_similar
+
+    ground_truth = json.loads((dataset / "ground_truth.json").read_text())["mo_pattern"]
+    ids = {int(c) for c in ground_truth["case_ids"]}
+    narratives = data.case_narratives()
+    corpus = [extract(c, narratives[c]).profile for c in sorted(ids) if c in narratives]
+
+    matches = find_similar(corpus[0], corpus, limit=10)
+    assert matches, "planted pattern should have related cases"
+    assert all(m.case_master_id in ids for m in matches[:5])
