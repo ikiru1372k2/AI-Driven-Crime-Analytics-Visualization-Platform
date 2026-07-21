@@ -32,6 +32,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
+      # A fresh runner has no CLI config, and the CLI then defaults to the US
+      # data centre (util_modules/dc.js). AI-KSP lives in IN, so every API
+      # call would hit the wrong region. Pin it explicitly.
+      CATALYST_ACTIVE_DC: ${{ vars.CATALYST_ACTIVE_DC || 'in' }}
       CATALYST_PROJECT_ID: ${{ vars.CATALYST_PROJECT_ID || '42171000000017001' }}
       CATALYST_ORG_ID: ${{ vars.CATALYST_ORG_ID || '60078928452' }}
       APPSAIL_URL: ${{ vars.APPSAIL_URL || 'https://kavach-analytics-50044141253.development.catalystappsail.in' }}
