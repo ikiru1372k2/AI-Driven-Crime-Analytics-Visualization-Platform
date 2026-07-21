@@ -21,6 +21,7 @@ data alone; it never reads the generator's planted answer key.
 
 from __future__ import annotations
 
+import functools
 import re
 from difflib import SequenceMatcher
 
@@ -148,12 +149,20 @@ class _Union:
         self.parent[self.find(a)] = self.find(b)
 
 
+@functools.lru_cache(maxsize=8)
 def resolve_identities(*, district_id: int | None = None, min_cluster_size: int = 2) -> dict:
     """Discover candidate cross-FIR identities from accused attributes.
 
     Returns identity clusters (size >= ``min_cluster_size``) for human review -
     each with its member records, a confidence, and the pairwise signal
     breakdown. Nothing is auto-merged (human-in-the-loop, #49).
+
+    Cached per (district_id, min_cluster_size): the pairwise comparison runs
+    over every accused record and took ~13s per request on the deployed demo,
+    which reads as a hung screen. The dataset is static for a run (ADR-011),
+    same assumption as data.enriched_cases(). Callers must not mutate the
+    returned dict; tests that switch KAVACH_DATA_DIR call
+    resolve_identities.cache_clear() alongside enriched_cases.cache_clear().
     """
     records = data.accused_records()
     if district_id is not None:
