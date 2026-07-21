@@ -145,3 +145,34 @@ def test_catalyst_validator_rejects_request_without_catalyst_context():
     """Forged/absent token: the SDK cannot establish a user → InvalidToken."""
     with pytest.raises(InvalidToken):
         CatalystValidator().validate({"authorization": "Bearer forged.token.value"})
+
+
+# -- deployed demo identity (explicit opt-in, not a security control) -------
+def test_demo_identity_requires_explicit_optin(monkeypatch):
+    from kavach.auth.validator import DemoIdentityValidator
+
+    monkeypatch.delenv("KAVACH_DEMO_IDENTITY", raising=False)
+    monkeypatch.setenv("KAVACH_ENV", "catalyst")
+    assert isinstance(build_validator(), CatalystValidator)  # denies by default
+
+    monkeypatch.setenv("KAVACH_DEMO_IDENTITY", "demo-state-analyst")
+    assert isinstance(build_validator(), DemoIdentityValidator)
+
+
+def test_demo_identity_used_only_without_a_real_session(monkeypatch):
+    from kavach.auth.validator import DemoIdentityValidator
+
+    v = DemoIdentityValidator("demo-state-analyst")
+    # no Catalyst context in the request -> the demo user
+    assert v.validate({}).user_id == "demo-state-analyst"
+
+
+def test_demo_identity_does_not_grant_admin(repo):
+    """The audit trail must stay SYSTEM_ADMIN-only even in demo mode."""
+    seed_demo_assignments(repo)
+    demo = repo.effective_assignment("demo-state-analyst")
+    assert demo.role is Role.SCRB_STATE_ANALYST
+    ctx = AuthContext(
+        user_id=demo.user_id, role=demo.role, scope_type=demo.scope_type, scope_id=demo.scope_id
+    )
+    assert not ctx.may_read_audit()

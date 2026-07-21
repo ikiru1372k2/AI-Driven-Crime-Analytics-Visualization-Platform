@@ -77,22 +77,60 @@ class DevValidator:
         return Identity(user_id=user_id, email=f"{user_id}@demo.invalid")
 
 
+class DemoIdentityValidator:
+    """Deployed-demo fallback: a real Catalyst session wins; if there is none,
+    the request is treated as a FIXED, named demo user.
+
+    Why this exists: the console has no sign-in screen yet (that is #60), so
+    without a fallback the deployed demo cannot open a node detail panel or
+    record a review decision. Enabled ONLY by setting KAVACH_DEMO_IDENTITY,
+    and the identity it grants is an ordinary analyst — SYSTEM_ADMIN-only
+    surfaces such as the audit trail stay denied, so the authorization model
+    is still demonstrably enforced.
+
+    This is a demo affordance on SYNTHETIC data (ADR-011), NOT a security
+    control. Do not set this variable on anything holding real FIR data.
+    """
+
+    def __init__(self, demo_user: str):
+        self.demo_user = demo_user
+        self._catalyst = CatalystValidator()
+
+    def validate(self, headers: dict[str, str]) -> Identity:
+        try:
+            return self._catalyst.validate(headers)
+        except InvalidToken:
+            return Identity(user_id=self.demo_user, email=f"{self.demo_user}@demo.invalid")
+
+
 def is_catalyst_runtime() -> bool:
     return bool(
         os.environ.get("KAVACH_ENV") == "catalyst" or os.environ.get("CATALYST_PROJECT_ID")
     )
 
 
+def demo_identity() -> str | None:
+    """The configured deployed-demo identity, if any."""
+    return os.environ.get("KAVACH_DEMO_IDENTITY") or None
+
+
 def build_validator() -> TokenValidator:
     """Choose the validator for this runtime — fail closed.
 
-    Dev auth requires an explicit opt-in AND a non-Catalyst runtime; if the
-    opt-in is missing we return the Catalyst validator, which denies rather
-    than inventing an identity.
+    Order: a real Catalyst session always wins. The two fallbacks each need
+    their own explicit opt-in; with neither set we return the Catalyst
+    validator, which denies rather than inventing an identity.
     """
-    if is_catalyst_runtime():
-        return CatalystValidator()
-    if os.environ.get("KAVACH_DEV_AUTH") == "1":
+    demo_user = demo_identity()
+    if demo_user:
+        logger.warning(
+            "KAVACH_DEMO_IDENTITY=%s: unauthenticated requests are treated as this "
+            "demo analyst because the console has no sign-in screen yet (#60). "
+            "Demo affordance on SYNTHETIC data — never enable this with real FIRs.",
+            demo_user,
+        )
+        return DemoIdentityValidator(demo_user)
+    if not is_catalyst_runtime() and os.environ.get("KAVACH_DEV_AUTH") == "1":
         logger.warning(
             "KAVACH_DEV_AUTH=1: header-based dev identities are enabled. "
             "This is for local development only."
