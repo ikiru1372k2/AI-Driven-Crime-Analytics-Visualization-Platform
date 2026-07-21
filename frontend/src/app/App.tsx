@@ -25,6 +25,7 @@ import { Overview } from "./Overview";
 import { IdentityReview } from "./IdentityReview";
 import { GraphView, type GraphSeed } from "./GraphView";
 import { EvidenceView } from "./EvidenceView";
+import { MoView } from "./MoView";
 import { CommandNav, type ModuleView } from "./CommandNav";
 import { TimeScrubber } from "./TimeScrubber";
 import type { NodeType } from "../lib/graphApi";
@@ -140,6 +141,8 @@ export function App() {
       {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
 
       {view === "identities" && <IdentityReview />}
+
+      {view === "mo" && <MoView />}
 
       {view === "evidence" && (
         <EvidenceView

@@ -162,6 +162,26 @@ def accused_records() -> list[dict]:
     return recs
 
 
+@functools.lru_cache(maxsize=1)
+def case_narratives() -> dict[int, str]:
+    """CaseMasterID -> BriefFacts, for MO extraction (MO-002/#38).
+
+    Deliberately NOT part of _CASE_FIELDS: narratives are free text and stay
+    off the general case API; only the MO pipeline reads them.
+    """
+    df = enriched_cases()
+    if "BriefFacts" not in df.columns:
+        return {}
+    out: dict[int, str] = {}
+    for case_id, text in zip(df["CaseMasterID"], df["BriefFacts"], strict=True):
+        if text is None or (isinstance(text, float) and pd.isna(text)):
+            continue
+        text = str(text).strip()
+        if text:
+            out[int(case_id)] = text
+    return out
+
+
 def victim_records() -> list[dict]:
     """Victim persons joined to their case's district (for association search)."""
     cols = ["VictimMasterID", "CaseMasterID", "VictimName", "AgeYear", "GenderID"]

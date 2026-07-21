@@ -5,7 +5,7 @@
  * not hidden). Scope is pinned so users always know their clearance
  * context (STATE seam until CAT-003/#19 binds real roles).
  */
-export type ModuleView = "overview" | "map" | "graph" | "identities" | "evidence";
+export type ModuleView = "overview" | "map" | "graph" | "identities" | "evidence" | "mo";
 
 interface NavItem {
   label: string;
@@ -50,7 +50,7 @@ export function CommandNav({
         },
       ],
     },
-    { label: "UNDERSTAND", items: [{ label: "MO Profiles", soon: true, dot: "#d9a13b" }] },
+    { label: "UNDERSTAND", items: [{ label: "MO Profiles", view: "mo", dot: "#d9a13b" }] },
     {
       label: "CONNECT",
       items: [

@@ -11,6 +11,7 @@ from kavach import __version__
 from kavach.api.audit_routes import router as audit_router
 from kavach.api.evidence_routes import router as evidence_router
 from kavach.api.graph_routes import router as graph_router
+from kavach.api.mo_routes import router as mo_router
 from kavach.api.routes import router as analytics_router
 
 app = FastAPI(
@@ -48,6 +49,7 @@ app.include_router(analytics_router)
 app.include_router(graph_router)
 app.include_router(audit_router)
 app.include_router(evidence_router)
+app.include_router(mo_router)
 
 
 _WEB_DIR = Path(os.environ.get("KAVACH_WEB_DIR", Path(__file__).resolve().parents[2] / "web"))
