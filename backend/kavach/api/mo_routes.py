@@ -26,6 +26,7 @@ from kavach.analytics.mo.runner import (
     load_precomputed,
     precomputed_path,
 )
+from kavach.analytics.mo.similarity import find_similar
 from kavach.analytics.mo.zia import ZiaClient
 from kavach.api import data
 from kavach.api.envelope import envelope
@@ -119,24 +120,102 @@ def latest_run() -> dict:
 
 
 @router.get("/profiles")
-def list_profiles(limit: int = Query(default=50, ge=1, le=500)) -> dict:
-    """Extracted profiles (queue for the MO view)."""
+def list_profiles(
+    q: str | None = Query(default=None, description="FIR number or words in the narrative"),
+    action: str | None = Query(default=None, description="filter: crime_action"),
+    target: str | None = Query(default=None, description="filter: target_type"),
+    mobility: str | None = Query(default=None, description="filter: mobility"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """Search and page the extracted profiles.
+
+    Filtering and paging happen server-side and only one page is serialized:
+    the client never receives the whole corpus, which is the shape this needs
+    to keep as the FIR count grows (see docs/analytics/mo-schema-v1.md on
+    scaling).
+    """
     repo, _ = mo_store()
-    payloads = repo.profile_payloads()
     narratives = data.case_narratives()
-    rows = [
-        {
-            **p,
-            "narrative_preview": (narratives.get(p["case_master_id"], "") or "")[:160],
-        }
-        for p in payloads[:limit]
-    ]
+    rows = repo.profile_payloads()
+
+    if action:
+        rows = [r for r in rows if str(r["crime_action"]["value"]) == action]
+    if target:
+        rows = [r for r in rows if str(r["target_type"]["value"]) == target]
+    if mobility:
+        rows = [r for r in rows if str(r["mobility"]["value"]) == mobility]
+    if q:
+        needle = q.strip().lower()
+        rows = [
+            r
+            for r in rows
+            if needle in str(r["case_master_id"])
+            or needle in (narratives.get(r["case_master_id"], "") or "").lower()
+        ]
+
+    total = len(rows)
+    page = rows[offset : offset + limit]
     return {
         "synthetic": True,
-        "total": len(payloads),
-        "count": len(rows),
-        "profiles": rows,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "count": len(page),
+        "profiles": [
+            {
+                **r,
+                "narrative_preview": (narratives.get(r["case_master_id"], "") or "")[:160],
+            }
+            for r in page
+        ],
         "intelligence": _envelope(),
+    }
+
+
+@router.get("/{case_id}/related")
+def related_cases(
+    case_id: int,
+    limit: int = Query(default=15, ge=1, le=50),
+) -> dict:
+    """Cases committed in a similar way (MO-004/#40).
+
+    A lead to investigate, classified POTENTIAL_ASSOCIATION — never a claim
+    that the same person committed both.
+    """
+    repo, _ = mo_store()
+    target = repo.get(case_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"no MO profile for case {case_id}")
+
+    narratives = data.case_narratives()
+    matches = find_similar(target, repo.all_profiles(), limit=limit)
+    return {
+        "synthetic": True,
+        "case_master_id": case_id,
+        "match_count": len(matches),
+        "matches": [
+            {
+                "case_master_id": m.case_master_id,
+                "score": m.score,
+                "matched": list(m.matched),
+                "differed": list(m.differed),
+                "explanation": m.explanation,
+                "narrative_preview": (narratives.get(m.case_master_id, "") or "")[:160],
+            }
+            for m in matches
+        ],
+        "intelligence": envelope(
+            classification=DataClassification.POTENTIAL_ASSOCIATION,
+            method_name="mo_attribute_similarity",
+            method_version="1.0.0",
+            model_version=MODEL_VERSION,
+            limitations=(
+                "a lead for review, not a finding that the same person is responsible",
+                "UNKNOWN attributes never count as agreement",
+                "synthetic data (ADR-011)",
+            ),
+        ),
     }
 
 

@@ -1824,3 +1824,57 @@ select:focus-visible {
   .mo-body { grid-template-columns: 1fr; height: auto; }
   .mo-rail { border-right: 0; border-bottom: 1px solid var(--hairline); }
 }
+
+/* MO search, pager and similar-MO results */
+.mo-search {
+  width: 100%;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+.mo-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.mo-pager button {
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.mo-pager button:disabled { opacity: 0.4; cursor: default; }
+.mo-related { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.mo-related-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.mo-related-row:hover { border-color: var(--series-1); }
+.mo-rel-id { font-weight: 700; font-size: 0.8rem; }
+.mo-rel-why { font-size: 0.78rem; color: var(--ink-2); }
+.mo-rel-score { font-size: 0.78rem; font-weight: 700; color: var(--good); }
+.mo-rel-preview {
+  margin: 0.2rem 0 0 0.6rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+  line-height: 1.4;
+}

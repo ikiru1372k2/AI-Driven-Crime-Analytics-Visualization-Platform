@@ -61,3 +61,39 @@ Note `time_context = UNKNOWN`: the narrative does not state a time — schema-co
 ## Versioning
 
 Additive changes only. A new vocabulary value or attribute bumps `SCHEMA_VERSION` (v2, …); similarity comparisons operate within the same major version (MO-004).
+
+## Scaling beyond a demo corpus (MO-002/#38)
+
+The current pipeline suits a 2,236-FIR demo and **does not scale as-is** to a
+real state corpus. Recording the limits and the path, so the difference is a
+documented decision rather than a surprise.
+
+### What is demo-shaped today
+
+| Piece | Now | Why it does not scale | Where it goes |
+|---|---|---|---|
+| Extraction | every narrative, in one batch | a full re-extraction per deploy is O(all FIRs) | extract **once per FIR at ingestion**, event-driven (#71/#72) |
+| Storage | one JSON file in the bundle, loaded into memory | a million profiles will not fit a bundle or a process | Catalyst NoSQL keyed by case id (#39) |
+| Reading | list endpoint reads from memory | working set grows without bound | already **paginated and searched server-side** — the query shape is production-correct |
+| Similarity | scores the target against every profile | O(n) per request | index by discriminating attribute, compare within candidate buckets |
+
+### What already has the right shape
+
+`GET /api/v1/mo/profiles` filters and pages **server-side** and serialises only
+one page, so the client never receives the corpus. That contract does not
+change when the store moves to NoSQL — only the code behind it does.
+
+### The incremental model
+
+MO is a function of one narrative, so extraction is naturally per-FIR: when an
+FIR is registered, extract once, store the profile, done. Nothing recomputes.
+A million FIRs is a million independent one-off extractions spread over years,
+not a batch job — which is what the Signals/Circuits event path (#71/#72) is
+for. The batch runner here exists because there is no live ingestion event yet.
+
+### Zia cost at scale
+
+Zia is called once per narrative, batched at 10 documents per request
+(measured limit: 10 OK, 20 rejected). One-off per FIR at ingestion is
+affordable; re-extracting the corpus on every deploy would not be, which is
+another reason extraction belongs at ingestion rather than at startup.
