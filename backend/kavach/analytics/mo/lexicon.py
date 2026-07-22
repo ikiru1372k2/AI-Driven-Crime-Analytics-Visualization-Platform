@@ -78,18 +78,51 @@ ACTION: dict[str, tuple[str, float]] = {
     "snatched": ("snatching", STRONG),
     "snatching": ("snatching", STRONG),
     "robbed": ("robbery", STRONG),
+    "robbing": ("robbery", STRONG),
     "by force": ("robbery", WEAK),
     "committed theft": ("theft", STRONG),
     "stole": ("theft", STRONG),
+    "stolen": ("theft", STRONG),
     "theft": ("theft", WEAK),
     "burglary": ("burglary", STRONG),
+    # A break-in is what makes an offence burglary rather than plain theft;
+    # the narratives state it as the entry, not with the word "burglary".
+    "broke open": ("burglary", STRONG),
+    "broke into": ("burglary", STRONG),
+    "broken into": ("burglary", STRONG),
+    "trespassed": ("burglary", STRONG),
     "assaulted": ("assault", STRONG),
+    "assaulting": ("assault", STRONG),
     "attacked": ("assault", STRONG),
+    "attacking": ("assault", STRONG),
     "threatened": ("threat", STRONG),
     "under threat": ("threat", STRONG),
     "cheated": ("fraud", STRONG),
     "failed to return": ("fraud", WEAK),
 }
+
+#: When a narrative states more than one action, which one is the offence?
+#:
+#: Length of the matched phrase is not evidential strength: "threatened" is a
+#: longer string than "robbed", but a narrative reading "threatened the
+#: complainant and robbed him" describes a robbery — the threat is *how* it was
+#: done, not *what* was done. Likewise "broke open the lock ... committed theft"
+#: is burglary, and the break-in is the element that makes it so.
+#:
+#: So the precedence is stated explicitly, highest first: a completed
+#: acquisitive offence outranks the force or fear used to achieve it, and a
+#: more specific offence outranks a more general one. This is an analytical
+#: judgement, which is exactly why it lives here in the open rather than
+#: falling out of string length by accident.
+ACTION_PRECEDENCE: tuple[str, ...] = (
+    "burglary",   # break-in + taking — the entry is the defining element
+    "robbery",    # taking by force or threat
+    "snatching",  # a specific taking; outranks bare "theft"
+    "theft",
+    "fraud",
+    "assault",    # force without a taking
+    "threat",     # fear alone — the weakest reading of any narrative
+)
 
 TARGET: dict[str, tuple[str, float]] = {
     "gold chain": ("gold_chain", STRONG),
@@ -136,6 +169,13 @@ WEAPON: dict[str, tuple[str, float]] = {
     "without any weapon": ("no", STRONG),
 }
 
+#: field name -> value precedence, for fields where one narrative can state
+#: several values and one of them is the better reading. Fields absent here
+#: fall back to longest-phrase-wins.
+FIELD_PRECEDENCE: dict[str, tuple[str, ...]] = {
+    "crime_action": ACTION_PRECEDENCE,
+}
+
 #: field name -> lexicon table. Drives the extraction loop.
 FIELD_LEXICONS: dict[str, dict[str, tuple[str, float]]] = {
     "mobility": MOBILITY,
@@ -178,21 +218,39 @@ class Match:
     phrase: str
 
 
-def find_matches(text: str, lexicon: dict[str, tuple[str, float]]) -> Match | None:
+def find_matches(
+    text: str,
+    lexicon: dict[str, tuple[str, float]],
+    precedence: tuple[str, ...] | None = None,
+) -> Match | None:
     """Best vocabulary match in `text`, or None.
 
-    Longest phrase wins, then higher strength — so "gold chain" beats "chain"
+    Ranking, in order: `precedence` (when the field declares one), then the
+    longest phrase, then the higher strength — so "gold chain" beats "chain"
     and never yields the weaker reading of the same sentence.
+
+    A field supplies `precedence` when two of its values can legitimately
+    appear in one narrative and one of them is the better reading regardless
+    of which phrase happens to be longer (see ACTION_PRECEDENCE).
     """
     lowered = text.lower()
     best: Match | None = None
+    best_key: tuple[int, int, float] | None = None
+
+    def priority(value: str | int) -> int:
+        """Higher is better; unranked values sort below every ranked one."""
+        if not precedence:
+            return 0
+        return -precedence.index(value) if value in precedence else -len(precedence)
+
     for phrase, (value, strength) in lexicon.items():
         idx = lowered.find(phrase)
         if idx == -1:
             continue
-        candidate = Match(value, strength, (idx, idx + len(phrase)), text[idx : idx + len(phrase)])
-        if best is None or (len(phrase), strength) > (len(best.phrase), best.confidence):
-            best = candidate
+        key = (priority(value), len(phrase), strength)
+        if best_key is None or key > best_key:
+            best_key = key
+            best = Match(value, strength, (idx, idx + len(phrase)), text[idx : idx + len(phrase)])
     return best
 
 

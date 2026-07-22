@@ -263,6 +263,68 @@ def test_ground_truth_extraction_rate_meets_threshold(dataset):
     assert rate >= 0.8, f"ground-truth extraction rate {rate:.0%} below the 80% threshold"
 
 
+#: CrimeSubHeadID -> the crime_action the narrative for that sub-head should
+#: yield. The sub-head is recorded by the officer independently of the
+#: narrative text, so it is an outside check on the extraction.
+_SUBHEAD_ACTION = {"32": "assault", "71": "robbery", "72": "theft", "73": "burglary",
+                   "111": "fraud"}
+
+
+def test_extracted_action_agrees_with_the_recorded_sub_head(dataset):
+    """The offence, not the means, must win when a narrative states both.
+
+    This is the regression for reading "threatened the complainant and robbed
+    him" as `threat`: the longer phrase won on string length alone, and 30% of
+    the corpus was mislabelled — robberies as threats, burglaries as thefts.
+    """
+    df = data.enriched_cases()
+    narratives = data.case_narratives()
+    sub_heads = {
+        int(k): v
+        for k, v in zip(df["CaseMasterID"], df["CrimeSubHeadID"], strict=True)
+    }
+    planted = {
+        int(c)
+        for c in json.loads((dataset / "ground_truth.json").read_text())["mo_pattern"]["case_ids"]
+    }
+
+    agree = disagree = 0
+    for case_id, text in narratives.items():
+        expected = _SUBHEAD_ACTION.get(sub_heads.get(case_id))
+        # the planted chain-snatches are filed as robbery but the narrative
+        # states snatching, which is the more specific — and correct — reading
+        if expected is None or case_id in planted:
+            continue
+        try:
+            got = extract(case_id, text).profile.crime_action.value
+        except ExtractionSkipped:
+            continue
+        agree += got == expected
+        disagree += got != expected
+
+    rate = agree / (agree + disagree)
+    assert rate >= 0.95, f"crime_action agrees with the sub-head only {rate:.0%} of the time"
+
+
+def test_offence_outranks_the_force_used_to_commit_it():
+    """Precedence, not phrase length, decides between co-stated actions."""
+    assert extract(20, "The accused threatened the complainant near the market and "
+                       "robbed him of cash.").profile.crime_action.value == "robbery"
+    assert extract(21, "Unknown persons robbed the complainant of jewellery under "
+                       "threat.").profile.crime_action.value == "robbery"
+    # a break-in is what makes a taking burglary rather than theft
+    assert extract(22, "During the night unknown persons broke open the lock of the "
+                       "house and committed theft of valuables."
+                   ).profile.crime_action.value == "burglary"
+
+
+def test_threat_alone_is_still_read_as_threat():
+    """Precedence must not suppress a value that is the only one stated."""
+    p = extract(23, "The accused threatened the complainant near the bus stand "
+                    "over a land dispute.").profile
+    assert p.crime_action.value == "threat"
+
+
 def test_unknown_rates_reported_for_drift(dataset):
     conn = connect()
     prov = ProvenanceRepository(conn)
@@ -313,6 +375,26 @@ def test_precomputed_profiles_are_revalidated_on_load(dataset, tmp_path):
     assert result.zia_used == 1           # Zia attribution preserved
     stored = MoRepository(conn).all_profiles()
     assert len(stored) == 1 and stored[0].extractor == EXTRACTOR_ZIA
+
+
+def test_precomputed_file_from_an_older_extractor_is_refused(dataset, tmp_path):
+    """Schema-valid is not the same as current.
+
+    Profiles extracted under older rules parse cleanly while asserting things
+    this extractor would no longer conclude, so a version mismatch falls back
+    to live extraction rather than serving stale conclusions silently.
+    """
+    from kavach.analytics.mo.runner import load_precomputed
+
+    good = extract(5001, CHAIN_SNATCH).profile
+    stale = json.loads(good.model_dump_json())
+    stale["model_version"] = "mo-extract-0.9.0"
+    path = tmp_path / "stale.json"
+    path.write_text(json.dumps({"model_version": "mo-extract-0.9.0", "profiles": [stale]}))
+
+    conn = connect()
+    assert load_precomputed(conn, ProvenanceRepository(conn), path) is None
+    assert MoRepository(conn).all_profiles() == []
 
 
 def test_corrupt_precomputed_file_falls_back(dataset, tmp_path):

@@ -66,12 +66,28 @@ def load_precomputed(
 
     Every profile is re-validated on load: a file that drifted from the schema
     is rejected wholesale rather than trusted because it is on disk.
+
+    A file produced by a different MODEL_VERSION is refused outright. Schema
+    validity is not the same as being current — profiles extracted under older
+    rules parse perfectly while asserting things this extractor would no longer
+    conclude, and serving those silently would misstate what the system did.
+    Refusing falls back to live extraction: slower, but honest.
     """
     try:
         payload = json.loads(path.read_text())
         raw_profiles = payload["profiles"]
     except (OSError, ValueError, KeyError) as exc:
         logger.warning("precomputed MO profiles unusable (%s): %s", path, exc)
+        return None
+
+    file_version = payload.get("model_version")
+    if file_version != MODEL_VERSION:
+        logger.warning(
+            "precomputed MO profiles are %s but this extractor is %s — "
+            "ignoring the file and extracting live (re-run scripts/mo_precompute.py)",
+            file_version,
+            MODEL_VERSION,
+        )
         return None
 
     repo = MoRepository(conn)
