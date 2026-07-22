@@ -90,3 +90,45 @@ def test_unknown_seed_is_empty(planted):
     res = find_associations("999999")
     assert res["seed"] is None
     assert res["association_count"] == 0 and res["nodes"] == []
+
+
+def test_seed_exposes_ids_and_primary_accused_profile(planted):
+    """The overview seed carries the attribute ids + primary-accused profile the
+    web client pre-applies as filters when expanding an entity."""
+    seed_case = str(planted["identity_fragment"]["records"][0]["case_id"])
+    seed = find_associations(seed_case)["seed"]
+    # attribute ids are present and non-empty (used to pre-fill crime/district)
+    for key in ("subhead_id", "district_id", "station_id"):
+        assert seed[key], f"seed missing {key}"
+    # the primary-accused profile keys exist (values may be None if unknown)
+    for key in ("accused_name", "accused_age", "accused_gender"):
+        assert key in seed
+    # the seed case has a planted accused, so its profile is populated
+    assert seed["accused_name"]
+
+
+def test_overview_counts_match_default_expansion(planted):
+    """A node's overview `expandable` hint must equal what expanding it actually
+    returns under the client's default similar-profile pre-filter — so hover
+    badges don't over-promise. Here: the crime-sub-head node."""
+    seed_case = str(planted["identity_fragment"]["records"][0]["case_id"])
+    ov = find_associations(seed_case)
+    seed = ov["seed"]
+    sub_node = next(n for n in ov["nodes"] if n["node_type"] == "CRIME_SUBHEAD")
+    hint = ov["expandable"][sub_node["node_id"]]
+
+    # rebuild the client's default pre-filter for a crime-sub-head expansion:
+    # its own attribute (crime type) is dropped; district + suspect profile pinned
+    prof = {"district_id": seed["district_id"]}
+    if seed["accused_gender"]:
+        prof["gender"] = seed["accused_gender"]
+    if seed["accused_age"] is not None:
+        prof["age_min"] = max(0, seed["accused_age"] - 5)
+        prof["age_max"] = min(120, seed["accused_age"] + 5)
+    if seed["accused_name"]:
+        prof["name_contains"] = seed["accused_name"].split()[0]
+
+    ex = find_associations(seed_case, focus=sub_node["node_id"], limit=10_000, **prof)
+    assert ex["total_matches"] == hint, (
+        f"overview hint {hint} != expansion total {ex['total_matches']}"
+    )

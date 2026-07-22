@@ -9,7 +9,7 @@
  * associations are visually distinct (HUMAN_CONFIRMED distinct again).
  * Large neighbourhoods arrive capped with explicit "N more" stubs.
  */
-import cytoscape, { type Core } from "cytoscape";
+import { type Core } from "cytoscape";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchAssociations,
@@ -27,13 +27,9 @@ import {
 import { GraphControls } from "./GraphControls";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { GraphRail } from "./GraphRail";
-import {
-  ALL_VIEW_KEYS,
-  buildCyStyle,
-  buildGraphElements,
-  canNavigateNode,
-  DEFAULT_SEED_CASE,
-} from "./graphConfig";
+import { ALL_VIEW_KEYS, canNavigateNode, DEFAULT_SEED_CASE } from "./graphConfig";
+import { initCytoscape, type HoverInfo } from "./graphCytoscape";
+import { buildPreFilter, type SeedAttrs } from "./graphPreFilter";
 
 export interface GraphSeed {
   type: NodeType;
@@ -78,9 +74,35 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const focusIdRef = useRef(focusId);
   focusIdRef.current = focusId;
-  const [hover, setHover] = useState<
-    { x: number; y: number; label: string; type: string; expand: number } | null
-  >(null);
+  // mirror the stats/view state into refs so a snapshot can capture the view
+  // being LEFT (Back must restore each view's own stats, not the last one seen)
+  const pageInfoRef = useRef(pageInfo);
+  pageInfoRef.current = pageInfo;
+  const expandableRef = useRef(expandable);
+  expandableRef.current = expandable;
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const drilledRef = useRef(drilled);
+  drilledRef.current = drilled;
+  const resultCountRef = useRef(resultCount);
+  resultCountRef.current = resultCount;
+  // remember which nodes we've already expanded so a repeat click just refocuses
+  const expandedRef = useRef(new Set<string>());
+  // the entity currently in focus — what a Filter narrows (the last one opened)
+  const activeFocusRef = useRef<string | null>(null);
+  // the seed case's own attributes (from the overview) — used to pre-apply a
+  // "similar cases" filter (its crime type, district and the suspect's profile)
+  // when the user expands an entity (see buildPreFilter)
+  const seedAttrsRef = useRef<SeedAttrs | null>(null);
+  // Default filter for a fresh expansion: the seed's similar-profile set. Seed
+  // attributes come from the overview load, else fall back to the graph's own
+  // crime-type + district nodes (see graphPreFilter).
+  const preFilterFor = useCallback(
+    (type: NodeType): AssocFilters =>
+      buildPreFilter(type, seedAttrsRef.current, mergedRef.current.nodes.values()),
+    [],
+  );
+  const [hover, setHover] = useState<HoverInfo | null>(null);
   const [seedType, setSeedType] = useState<NodeType>(seed?.type ?? "CASE");
   const [seedId, setSeedId] = useState<string>(seed?.id ?? "");
   const [loading, setLoading] = useState(false);
@@ -88,9 +110,23 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   // previous views (graph + seed) so Back restores the prior view AND the seed
   const mergedRef = useRef(merged);
   const seedRef = useRef({ type: seedType, id: seedId });
-  const historyRef = useRef<
-    Array<{ nodes: Map<string, GraphNode>; edges: Map<string, GraphEdge>; type: NodeType; id: string }>
-  >([]);
+  // A view snapshot is the graph AND everything the stats bar / pager / zoom
+  // read from, so Back restores a view exactly as it was — including its stats.
+  interface ViewSnapshot {
+    nodes: Map<string, GraphNode>;
+    edges: Map<string, GraphEdge>;
+    type: NodeType;
+    id: string;
+    pageInfo: { total: number; offset: number; count: number } | null;
+    activeFocus: string | null;
+    focusId: string | null;
+    expandable: Record<string, number>;
+    page: number;
+    drilled: boolean;
+    filters: AssocFilters;
+    resultCount: number | null;
+  }
+  const historyRef = useRef<ViewSnapshot[]>([]);
   useEffect(() => {
     mergedRef.current = merged;
   }, [merged]);
@@ -98,7 +134,8 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     seedRef.current = { type: seedType, id: seedId };
   }, [seedType, seedId]);
 
-  // capture the current view before an action changes it
+  // capture the current view before an action changes it. Reads only refs, so
+  // it MUST run before those refs are mutated toward the next view.
   const snapshot = useCallback(() => {
     if (mergedRef.current.nodes.size > 0) {
       historyRef.current.push({
@@ -106,6 +143,14 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         edges: mergedRef.current.edges,
         type: seedRef.current.type,
         id: seedRef.current.id,
+        pageInfo: pageInfoRef.current,
+        activeFocus: activeFocusRef.current,
+        focusId: focusIdRef.current,
+        expandable: expandableRef.current,
+        page: pageRef.current,
+        drilled: drilledRef.current,
+        filters: filtersRef.current,
+        resultCount: resultCountRef.current,
       });
     }
   }, []);
@@ -135,6 +180,18 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           setSubgraph(null);
           setExpandable(a.expandable ?? {});
           setResultCount(a.total_related);
+          // remember the seed's attributes so expansions can pre-filter to its
+          // crime type (see preFilterFor / expand)
+          seedAttrsRef.current = a.seed
+            ? {
+                subhead_id: a.seed.subhead_id,
+                district_id: a.seed.district_id,
+                station_id: a.seed.station_id,
+                accused_name: a.seed.accused_name,
+                accused_age: a.seed.accused_age,
+                accused_gender: a.seed.accused_gender,
+              }
+            : null;
         } else {
           const sg = await fetchSubgraph(type, id, { depth: 1, limit: 40 });
           setSubgraph(sg);
@@ -269,31 +326,37 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     },
     [snapshot, onSeed],
   );
-  // remember which nodes we've already expanded so a repeat click just refocuses
-  const expandedRef = useRef(new Set<string>());
-  // the entity currently in focus — what a Filter narrows (the last one opened)
-  const activeFocusRef = useRef<string | null>(null);
   const expand = useCallback(
     (type: NodeType, id: string) => {
       const key = `${type}:${id}`;
+      if (expandedRef.current.has(key)) {
+        // already loaded — just refocus/zoom, no new history entry
+        setFocusId(key);
+        activeFocusRef.current = key;
+        return;
+      }
+      // snapshot the view we're leaving BEFORE mutating focus/drill state, so
+      // its own stats are what Back restores (not this new expansion's).
+      snapshot();
       setFocusId(key); // zoom to this node's cluster
       activeFocusRef.current = key; // this becomes the Filter's target
-      if (expandedRef.current.has(key)) return; // already loaded — just refocus
       expandedRef.current.add(key);
       setDrilled(true); // we've left the overview → hide the View control
-      snapshot();
       if (seedRef.current.type !== "CASE") {
         void load(type, id, true); // non-CASE seed → base subgraph
         return;
       }
-      // A fresh expansion shows all of the entity's cases (paged); the user
-      // narrows them with Filter. Clear any filter left over from a prior one.
-      filtersRef.current = {};
+      // A fresh expansion is pre-scoped to the seed case's crime type, so it
+      // surfaces SIMILAR cases by default ("did a similar case happen in this
+      // district / did this person commit similar crimes?"). The user can widen
+      // it via the Filter control. This replaces any filter left from a prior one.
+      const pre = preFilterFor(type);
+      filtersRef.current = pre;
       firstFilter.current = true; // we load below; don't double-fire the filter effect
-      setFilters({});
+      setFilters(pre);
       void showFocus(key, 0);
     },
-    [snapshot, load, showFocus],
+    [snapshot, load, showFocus, preFilterFor],
   );
 
   // Applying a Filter narrows the cases in whatever you've expanded (Filter
@@ -314,142 +377,67 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   // resets too). Falls back to fitting the whole graph when history is empty.
   const goBack = useCallback(() => {
     const cy = cyRef.current;
-    setFocusId(null);
     cy?.elements().removeClass("dim");
+    // the level we're leaving must be re-expandable from scratch on a later click
+    const leaving = activeFocusRef.current;
     const prev = historyRef.current.pop();
     if (prev) {
       setMerged({ nodes: prev.nodes, edges: prev.edges });
       setSeedType(prev.type);
       setSeedId(prev.id);
+      // restore the view's OWN stats/zoom state so the bar matches what's shown
+      setFocusId(prev.focusId);
+      activeFocusRef.current = prev.activeFocus;
+      setPageInfo(prev.pageInfo);
+      setPage(prev.page);
+      setExpandable(prev.expandable);
+      setResultCount(prev.resultCount);
+      setDrilled(prev.drilled);
+      firstFilter.current = true; // restoring filters must not re-run the expansion
+      setFilters(prev.filters);
+      if (leaving) expandedRef.current.delete(leaving);
       // the first snapshot is always the overview, so an empty stack == overview
-      if (historyRef.current.length === 0) {
-        setDrilled(false);
-        expandedRef.current.clear();
-        activeFocusRef.current = null;
-        setPageInfo(null);
-        firstFilter.current = true;
-        setFilters({}); // back at the overview → clear the expansion-level filter
-      }
+      if (historyRef.current.length === 0) expandedRef.current.clear();
     } else {
+      setFocusId(null);
       cy?.animate({ fit: { eles: cy.elements(), padding: 60 }, duration: 350 });
     }
   }, []);
 
-  // (re)draw cytoscape when the merged element set changes
+  // (re)draw cytoscape when the merged element set changes. All layout/style
+  // and event wiring lives in initCytoscape; the component supplies live refs
+  // and the callbacks that turn taps/hovers into state changes.
   useEffect(() => {
     if (!containerRef.current) return;
     cyRef.current?.destroy();
-    // View projection + degree sizing + expandable badges (see buildGraphElements)
-    const seedNodeId = `${seedType}:${seedId}`;
-    const elements = buildGraphElements(
+    const cy = initCytoscape(containerRef.current, {
       merged,
       viewDims,
       expandable,
-      expandedRef.current,
-      seedNodeId,
-    );
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements,
-      layout: {
-        name: "cose",
-        animate: false,
-        padding: 60,
-        nodeRepulsion: () => 16000,
-        // distance encodes association strength: stronger link -> shorter edge
-        // (closer). Weight raises strength; unconfirmed/AI links sit farther out.
-        idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
-          const w = Math.max(1, Number(edge.data("weight")) || 1);
-          const cls = edge.data("classification") as string;
-          const far =
-            cls === "AI_DERIVED" || cls === "POTENTIAL_ASSOCIATION"
-              ? 1.7
-              : cls === "HUMAN_CONFIRMED"
-                ? 0.7
-                : 1.0;
-          return (55 + 120 / Math.sqrt(w)) * far;
-        },
-        edgeElasticity: () => 100,
-        nodeOverlap: 28,
-        componentSpacing: 160,
-        gravity: 0.2,
-        numIter: 2200,
-        randomize: true,
-        fit: true,
-      },
-      minZoom: 0.2,
-      maxZoom: 2.5,
-      wheelSensitivity: 0.2,
-      style: buildCyStyle(theme) as cytoscape.StylesheetStyle[],
-    });
-    // tap a node:
-    //  - an entity with related cases still to reveal -> expand it (zoom in +
-    //    draw its related cases), staying on the same seed (NOT a rabbit hole);
-    //  - anything else (cases, exhausted entities) -> open its details popover.
-    // Navigation to a new seed happens only from the button inside the popover.
-    cy.on("tap", "node", (ev) => {
-      const type = ev.target.data("type") as NodeType;
-      const ref = ev.target.data("ref") as string;
-      const id = ev.target.id() as string;
-      setHover(null);
-      // the central node (the focused hub, or the seed case on the overview) is
-      // the subject you're already looking at — no detail card for it.
-      const centralId = focusIdRef.current ?? `${seedRef.current.type}:${seedRef.current.id}`;
-      if (id === centralId) return;
-      // an expandable hub always routes through expand(): first tap reveals its
-      // related cases, a repeat tap just re-focuses/zooms (no detail popover).
-      // Only leaf nodes (cases, non-variant people) open the detail card.
-      if ((expandable[id] ?? 0) > 0) {
-        expand(type, ref);
-      } else {
+      expandedSet: expandedRef.current,
+      seedNodeId: `${seedType}:${seedId}`,
+      theme,
+      focusIdRef,
+      seedRef,
+      onExpand: expand,
+      onOpenNode: (type, ref) => {
         openNode(type, ref);
         setShowDetail(true);
-      }
-    });
-    cy.on("tap", "edge", (ev) => {
-      const e = merged.edges.get(ev.target.id() as string);
-      if (e) {
-        setDetail(null);
-        setEdgeDetail(e);
-        setShowDetail(false); // surface via the info button, open on click
-      }
-    });
-    // tap empty canvas: just dismiss any open detail — keep the current focus
-    // and its zoom/dimming (use Back to leave a cluster; clicking away should
-    // not suddenly reveal every other case's details)
-    cy.on("tap", (ev) => {
-      if (ev.target === cy) {
+      },
+      onEdgeTap: (edgeId) => {
+        const e = merged.edges.get(edgeId);
+        if (e) {
+          setDetail(null);
+          setEdgeDetail(e);
+          setShowDetail(false); // surface via the info button, open on click
+        }
+      },
+      onCanvasTap: () => {
         setDetail(null);
         setEdgeDetail(null);
         setShowDetail(false);
-      }
-    });
-    // hover: reveal the node's label + connections, and float a small info card
-    cy.on("mouseover", "node", (ev) => {
-      ev.target.addClass("hover");
-      ev.target.connectedEdges().addClass("incident");
-      cy.container()!.style.cursor = "pointer";
-      // the central node (focused hub, or the seed case on the overview) is
-      // already the subject — no tooltip for it
-      const centralId = focusIdRef.current ?? `${seedRef.current.type}:${seedRef.current.id}`;
-      if (ev.target.id() === centralId) return;
-      const rp = ev.renderedPosition;
-      if (rp) {
-        const id = ev.target.id() as string;
-        setHover({
-          x: rp.x,
-          y: rp.y,
-          label: ev.target.data("label") as string,
-          type: ev.target.data("type") as string,
-          expand: expandedRef.current.has(id) ? 0 : expandable[id] ?? 0,
-        });
-      }
-    });
-    cy.on("mouseout", "node", (ev) => {
-      ev.target.removeClass("hover");
-      ev.target.connectedEdges().removeClass("incident");
-      cy.container()!.style.cursor = "";
-      setHover(null);
+      },
+      onHover: setHover,
     });
     cyRef.current = cy;
     return () => {
@@ -484,6 +472,9 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     ? merged.nodes.get(activeFocusRef.current)?.label ?? ""
     : "";
   const focusIsAccused = activeFocusRef.current?.startsWith("ACCUSED_RECORD:") ?? false;
+  // the expanded entity's type — its own attribute is redundant to filter on
+  // (every result already shares it), so that field is hidden in the Filter
+  const focusType = (activeFocusRef.current?.split(":")[0] as NodeType | undefined) ?? null;
 
   return (
     <div className="body graph-body">
@@ -521,6 +512,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           filters={filters}
           onApplyFilters={setFilters}
           resultCount={resultCount}
+          expandedType={focusType}
         />
         {drilled && pageInfo && (
           <div className="graph-stats" role="status">

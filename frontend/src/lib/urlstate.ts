@@ -6,7 +6,7 @@
 import type { Filters } from "./api";
 
 export interface HashState {
-  view: "overview" | "map" | "graph" | "identities" | "evidence" | "mo";
+  view: "overview" | "map" | "graph" | "identities" | "evidence" | "mo" | "forecast";
   filters: Partial<Filters>;
   hotspot: number | null;
   /** graph seed as "TYPE:id", e.g. "ACCUSED_RECORD:2238" (#63) */
@@ -32,7 +32,9 @@ export function readHashState(): HashState {
             ? "evidence"
             : v === "mo"
               ? "mo"
-              : "overview";
+              : v === "forecast"
+                ? "forecast"
+                : "overview";
   return {
     view,
     filters,

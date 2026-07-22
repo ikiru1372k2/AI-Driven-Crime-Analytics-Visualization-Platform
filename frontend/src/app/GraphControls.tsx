@@ -7,7 +7,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchMeta, type Meta } from "../lib/api";
-import type { AssocFilters } from "../lib/graphApi";
+import type { AssocFilters, NodeType } from "../lib/graphApi";
 import { VIEW_DIMS } from "./graphConfig";
 
 interface Props {
@@ -20,10 +20,15 @@ interface Props {
   filters: AssocFilters;
   onApplyFilters: (f: AssocFilters) => void;
   resultCount: number | null;
+  /** The entity type currently expanded. All results already share its own
+   *  attribute, so filtering on that attribute is redundant and its field is
+   *  hidden (e.g. no District dropdown while expanding a district). */
+  expandedType?: NodeType | null;
 }
 
 export function GraphControls({
   showView, showFilter, viewDims, onToggleDim, filters, onApplyFilters, resultCount,
+  expandedType,
 }: Props) {
   const [open, setOpen] = useState<"view" | "filter" | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -107,23 +112,29 @@ export function GraphControls({
         <div className="gc-pop wide">
           <p className="gc-title">Filter associations {resultCount != null && <span className="gc-count">· {resultCount} found</span>}</p>
 
-          <label className="gc-field">Crime type
-            <select value={draft.subhead_id ?? ""} onChange={(e) => set("subhead_id", e.target.value)}>
-              <option value="">any</option>
-              {meta?.crime_subheads.map((s) => (
-                <option key={s.subhead_id} value={s.subhead_id}>{s.subhead_name}</option>
-              ))}
-            </select>
-          </label>
+          {/* the crime is already fixed when a crime-type node is expanded */}
+          {expandedType !== "CRIME_SUBHEAD" && expandedType !== "CRIME_HEAD" && (
+            <label className="gc-field">Crime type
+              <select value={draft.subhead_id ?? ""} onChange={(e) => set("subhead_id", e.target.value)}>
+                <option value="">any</option>
+                {meta?.crime_subheads.map((s) => (
+                  <option key={s.subhead_id} value={s.subhead_id}>{s.subhead_name}</option>
+                ))}
+              </select>
+            </label>
+          )}
 
-          <label className="gc-field">District
-            <select value={draft.district_id ?? ""} onChange={(e) => set("district_id", e.target.value)}>
-              <option value="">any</option>
-              {meta?.districts.map((d) => (
-                <option key={d.district_id} value={d.district_id}>{d.district_name}</option>
-              ))}
-            </select>
-          </label>
+          {/* the district is already fixed when a district node is expanded */}
+          {expandedType !== "DISTRICT" && (
+            <label className="gc-field">District
+              <select value={draft.district_id ?? ""} onChange={(e) => set("district_id", e.target.value)}>
+                <option value="">any</option>
+                {meta?.districts.map((d) => (
+                  <option key={d.district_id} value={d.district_id}>{d.district_name}</option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="gc-field">Name (contains)
             <input value={draft.name_contains ?? ""} placeholder="e.g. Ravi"

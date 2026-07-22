@@ -132,7 +132,20 @@ export interface AssocFilters {
 }
 
 export interface AssociationResult {
-  seed: { case_id: string; subhead: string; station: string; district: string } | null;
+  seed: {
+    case_id: string;
+    subhead: string;
+    station: string;
+    district: string;
+    // attribute ids + primary-accused profile — used to pre-apply the seed's
+    // attributes (crime type, district, suspect age/gender/name) as filters on expand
+    subhead_id: string;
+    district_id: string;
+    station_id: string;
+    accused_name: string | null;
+    accused_age: number | null;
+    accused_gender: string | null;
+  } | null;
   focus: string | null;
   channel: string | null;
   /** cases on THIS page (association_count) out of total_matches for the focus. */

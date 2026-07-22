@@ -33,6 +33,12 @@ import pandas as pd
 from kavach.analytics.entity import resolve_identities
 from kavach.api import data
 
+#: How far an "age band" reaches around the seed suspect's age for the default
+#: similar-profile pre-filter. MUST match AGE_BAND in the web client
+#: (frontend/src/app/GraphView.tsx, preFilterFor) so overview hint counts equal
+#: what an expansion actually shows.
+_AGE_BAND = 5
+
 #: association channel -> (relationship_type, classification, strength weight)
 _CHANNELS = {
     "same_suspect": ("SAME_IDENTITY", "POTENTIAL_ASSOCIATION", 1.0),
@@ -156,9 +162,12 @@ def find_associations(
     ident_idx = _same_suspect_index()
     rows_by_cid = {r.CaseMasterID: r for r in df.itertuples(index=False)}
 
-    def qualifies(cid: str) -> bool:
+    def _case_passes(cid: str, f: dict) -> bool:
         row = rows_by_cid.get(cid)
-        return row is not None and _passes_filters(cid, row, acc_by_case, vic_by_case, filters)
+        return row is not None and _passes_filters(cid, row, acc_by_case, vic_by_case, f)
+
+    def qualifies(cid: str) -> bool:
+        return _case_passes(cid, filters)
 
     # candidate related cases per channel (filtered), excluding the seed
     station_cases, district_cases, subhead_cases = [], [], []
@@ -195,15 +204,62 @@ def find_associations(
         g.node("VICTIM_RECORD", v["victim_id"], v["name"])
         g.edge("VICTIM_IN", "FACT", f"VICTIM_RECORD:{v['victim_id']}", seed_case, 1.0, case_id)
 
-    # how many related cases each entity would reveal (a hint on the overview)
-    expandable = {
-        st: len(set(station_cases)),
-        di: len(set(district_cases)),
-        sh: len(set(subhead_cases)),
-    }
-    for sa in seed_accused:
-        aid = sa["accused_id"]
-        expandable[f"ACCUSED_RECORD:{aid}"] = len(suspect_by_acc.get(aid, {}))
+    # how many related cases each entity would reveal.
+    if focus is not None:
+        # in an expansion the request already carries the active filters, so the
+        # per-channel pools are correctly scoped — count them directly.
+        expandable = {
+            st: len(set(station_cases)),
+            di: len(set(district_cases)),
+            sh: len(set(subhead_cases)),
+        }
+        for sa in seed_accused:
+            aid = sa["accused_id"]
+            expandable[f"ACCUSED_RECORD:{aid}"] = len(suspect_by_acc.get(aid, {}))
+    else:
+        # OVERVIEW: show the count a node reveals when expanded BY DEFAULT — i.e.
+        # under the seed's similar-profile pre-filter the client pre-applies — so
+        # a node's badge/hover matches what clicking it shows. Each entity drops
+        # its own attribute from the profile. Keep this in step with preFilterFor
+        # in the web client (frontend/src/app/GraphView.tsx).
+        acc0 = seed_accused[0] if seed_accused else None
+        prof: dict = {}
+        if acc0 and acc0.get("gender"):
+            prof["gender"] = acc0["gender"]
+        if acc0 and acc0.get("age") is not None:
+            prof["age_min"] = max(0, acc0["age"] - _AGE_BAND)
+            prof["age_max"] = min(120, acc0["age"] + _AGE_BAND)
+        if acc0 and acc0.get("name"):
+            prof["name_contains"] = acc0["name"].split()[0]
+        # district- and crime-sub-head expansions share the same effective filter
+        # (crime + district + suspect profile); a station also pins the station.
+        place = {**prof, "subhead_id": s["subhead_id"], "district_id": s["district_id"]}
+        place_station = {**place, "station_id": s["station_id"]}
+        # counts stay orthogonal to any caller filters: a case is counted only if
+        # it passes BOTH the explicit filters (`qualifies`) AND the default
+        # profile. With no filters `qualifies` admits everything (normal case);
+        # an impossible filter (e.g. unknown district) zeroes every count.
+        n_place = sum(
+            1 for row in df.itertuples(index=False)
+            if row.CaseMasterID != cid0
+            and qualifies(row.CaseMasterID)
+            and _case_passes(row.CaseMasterID, place)
+        )
+        n_station = sum(
+            1 for row in df.itertuples(index=False)
+            if row.CaseMasterID != cid0
+            and qualifies(row.CaseMasterID)
+            and _case_passes(row.CaseMasterID, place_station)
+        )
+        expandable = {st: n_station, di: n_place, sh: n_place}
+        # the same-person (accused) channel is scoped only to the seed's crime type
+        crime_only = {"subhead_id": s["subhead_id"]}
+        for sa in seed_accused:
+            aid = sa["accused_id"]
+            members = suspect_by_acc.get(aid, {})
+            expandable[f"ACCUSED_RECORD:{aid}"] = sum(
+                1 for cid in members if qualifies(cid) and _case_passes(cid, crime_only)
+            )
 
     # ---- expand one entity into its related cases (paginated) ----
     assoc_count = 0
@@ -242,7 +298,15 @@ def find_associations(
         "synthetic": True,
         "params": {**params, "offset": offset},
         "seed": {"case_id": cid0, "subhead": s["subhead_name"],
-                 "station": s["station_name"], "district": s["district_name"]},
+                 "station": s["station_name"], "district": s["district_name"],
+                 # ids + the primary accused's profile so the client can pre-apply
+                 # the seed's attributes as filters when expanding an entity
+                 # ("similar cases here / similar suspects / by this person")
+                 "subhead_id": s["subhead_id"], "district_id": s["district_id"],
+                 "station_id": s["station_id"],
+                 "accused_name": seed_accused[0]["name"] if seed_accused else None,
+                 "accused_age": seed_accused[0]["age"] if seed_accused else None,
+                 "accused_gender": seed_accused[0]["gender"] if seed_accused else None},
         "focus": focus,
         "channel": channel,
         "association_count": assoc_count,
