@@ -39,7 +39,9 @@ from kavach.analytics.mo.zia import ZiaSignal
 #: Bumped when extraction behaviour changes; profiles are idempotent per
 #: (case_master_id, model_version), so a bump re-extracts rather than
 #: silently mixing outputs.
-MODEL_VERSION = "mo-extract-1.0.0"
+#: 1.1.0 — crime_action resolves by ACTION_PRECEDENCE instead of phrase length,
+#: so "threatened ... and robbed him" reads as robbery, not threat.
+MODEL_VERSION = "mo-extract-1.1.0"
 METHOD_NAME = "zia_lexicon_mo_extraction"
 
 EXTRACTOR_ZIA = "ZIA_TEXT_ANALYTICS"
@@ -156,7 +158,11 @@ def extract(
         corroborations += 1
 
     for field_name in _LEXICON_FIELDS:
-        match = lexicon.find_matches(text, lexicon.FIELD_LEXICONS[field_name])
+        match = lexicon.find_matches(
+            text,
+            lexicon.FIELD_LEXICONS[field_name],
+            lexicon.FIELD_PRECEDENCE.get(field_name),
+        )
         if match is None:
             raw[field_name] = _attribute(lexicon.unknown_match(), None)
             continue
