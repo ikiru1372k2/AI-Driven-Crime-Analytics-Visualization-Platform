@@ -35,3 +35,4 @@ data/risk_train.csv
 .catalyst-app/
 .playwright-mcp/
 .catalyst-build/
+.gstack/

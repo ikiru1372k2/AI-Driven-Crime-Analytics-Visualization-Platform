@@ -87,7 +87,10 @@ export function initCytoscape(container: HTMLDivElement, p: CyParams): Core {
     },
     minZoom: 0.2,
     maxZoom: 2.5,
-    wheelSensitivity: 0.2,
+    // wheelSensitivity is deliberately left at the Cytoscape default: any other
+    // value is calibrated to whichever pointing device the author happened to
+    // use, and the library logs a warning saying exactly that. A demo gets
+    // driven on someone else's mouse, so the default is the safe choice.
     style: buildCyStyle(p.theme) as cytoscape.StylesheetStyle[],
   });
 
