@@ -121,7 +121,11 @@ cat > "$BUILD/app-config.json" <<JSON
     "KAVACH_WEB_DIR": "web",
     "KAVACH_SCHEMA_MANIFEST": "docs/schema/schema-manifest.json",
     "KAVACH_MO_PROFILES": "data/mo_profiles.json",
-    "KAVACH_DEMO_IDENTITY": "${KAVACH_DEMO_IDENTITY:-demo-state-analyst}"
+    "KAVACH_DEMO_IDENTITY": "${KAVACH_DEMO_IDENTITY:-demo-state-analyst}",
+    "KAVACH_QUICKML_RISK_ENDPOINT": "${KAVACH_QUICKML_RISK_ENDPOINT:-}",
+    "KAVACH_QUICKML_LLM_ENDPOINT": "${KAVACH_QUICKML_LLM_ENDPOINT:-}",
+    "KAVACH_QUICKML_LLM_TOKEN": "${KAVACH_QUICKML_LLM_TOKEN:-}",
+    "KAVACH_QUICKML_LLM_MODEL": "${KAVACH_QUICKML_LLM_MODEL:-qwen-2.5-14b-instruct}"
   },
   "memory": 512
 }

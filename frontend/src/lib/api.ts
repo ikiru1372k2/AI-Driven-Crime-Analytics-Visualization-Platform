@@ -236,6 +236,47 @@ export interface DistrictsResponse {
 
 export const fetchDistricts = () => getJSON<DistrictsResponse>("/api/districts");
 
+// --- area-risk forecast (FORECAST tab, live QuickML) ---
+
+export type RiskLevel = "High" | "Medium" | "Low";
+
+export interface RiskDistrict {
+  rank: number;
+  district_id: string;
+  district_name: string;
+  risk_level: RiskLevel;
+  expected_count: number; // QuickML forecast for the next window
+  recent_count: number; // cases in the last window (baseline)
+  trend: "up" | "down" | "flat";
+  forecast_pct_change: number; // forecast vs recent, %
+  drivers: string[]; // plain-English computed facts
+  summary: string; // one-sentence plain-English read-out
+  summary_source: string; // "template" or the LLM model id (e.g. qwen-2.5-14b-instruct)
+  confidence: { level: "high" | "medium" | "low"; basis: string };
+  sample_case_ids: string[]; // recent FIRs behind this forecast (evidence trail)
+}
+
+export interface IntelligenceEnvelope {
+  classification: string;
+  classification_label: string;
+  method: { method_name: string; method_version: string; model_version?: string };
+  limitations?: string[];
+}
+
+export interface RiskResponse {
+  synthetic: boolean;
+  available: boolean; // false => QuickML unconfigured/unreachable (no numbers shown)
+  reason?: string; // why unavailable
+  window_days: number;
+  model_version: string;
+  district_count?: number;
+  districts: RiskDistrict[];
+  intelligence: IntelligenceEnvelope;
+}
+
+export const fetchRisk = (windowDays = 30) =>
+  getJSON<RiskResponse>("/api/risk", { window_days: windowDays });
+
 // --- entity resolution (identity candidates) ---
 
 export interface IdentityMember {

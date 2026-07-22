@@ -12,6 +12,8 @@ from kavach.analytics.association import find_associations
 from kavach.analytics.entity import resolve_identities
 from kavach.analytics.hotspot import detect_hotspots
 from kavach.analytics.hotspot import engine as hotspot_engine
+from kavach.analytics.risk import engine as risk_engine
+from kavach.analytics.risk import forecast_area_risk
 from kavach.analytics.trends import detect_trends
 from kavach.analytics.trends import engine as trends_engine
 from kavach.api import data
@@ -119,6 +121,33 @@ def get_trends(
         method_name=trends_engine.METHOD_NAME,
         method_version=trends_engine.METHOD_VERSION,
         limitations=("synthetic data (ADR-011)",),
+    )
+    return result
+
+
+@router.get("/risk")
+def get_risk(
+    window_days: int = Query(
+        default=30, ge=7, le=90, description="forecast horizon = feature window length"
+    ),
+) -> dict:
+    """Per-district next-window crime-risk forecast via live QuickML (FORECAST tab).
+
+    The forecast number is produced by a trained Zoho QuickML pipeline called
+    live from the runtime; we add only checkable facts (momentum, direction, top
+    offence) and plain-English phrasing. When QuickML is unconfigured/unreachable
+    (local dev, CI) the payload is ``available: false`` — never a fabricated number.
+    """
+    result = forecast_area_risk(window_days=window_days)
+    result["intelligence"] = envelope(
+        classification=DataClassification.AI_DERIVED,
+        method_name=risk_engine.METHOD_NAME,
+        method_version=risk_engine.METHOD_VERSION,
+        model_version=result.get("model_version", risk_engine.MODEL_VERSION),
+        limitations=(
+            "synthetic data (ADR-011)",
+            "forecast — indicative, not deterministic; the number is a QuickML model estimate",
+        ),
     )
     return result
 
