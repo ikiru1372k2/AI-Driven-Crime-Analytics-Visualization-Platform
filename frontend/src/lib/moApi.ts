@@ -79,9 +79,56 @@ async function get<T>(path: string): Promise<T> {
 
 export const fetchMoRun = () => get<MoRun>("/api/v1/mo/runs/latest");
 
-export const fetchMoProfiles = (limit = 50) =>
-  get<{ total: number; count: number; profiles: MoListRow[] }>(
-    `/api/v1/mo/profiles?limit=${limit}`,
+export interface MoVocabulary {
+  crime_action: string[];
+  target_type: string[];
+  mobility: string[];
+}
+
+/** Filter options come from the schema, so they cannot drift from the values
+ *  the extractor is allowed to produce. */
+export const fetchMoVocabulary = () => get<MoVocabulary>("/api/v1/mo/vocabulary");
+
+export interface MoPage {
+  total: number;
+  offset: number;
+  limit: number;
+  count: number;
+  profiles: MoListRow[];
+}
+
+/** Search + page server-side: only one page crosses the wire, so the client
+ *  never holds the whole corpus (see the scaling note in moRoutes). */
+export const fetchMoProfiles = (opts: {
+  q?: string;
+  action?: string;
+  target?: string;
+  mobility?: string;
+  limit?: number;
+  offset?: number;
+} = {}) => {
+  const p = new URLSearchParams();
+  if (opts.q) p.set("q", opts.q);
+  if (opts.action) p.set("action", opts.action);
+  if (opts.target) p.set("target", opts.target);
+  if (opts.mobility) p.set("mobility", opts.mobility);
+  p.set("limit", String(opts.limit ?? 40));
+  p.set("offset", String(opts.offset ?? 0));
+  return get<MoPage>(`/api/v1/mo/profiles?${p}`);
+};
+
+export interface MoMatch {
+  case_master_id: number;
+  score: number;
+  matched: string[];
+  differed: string[];
+  explanation: string;
+  narrative_preview: string;
+}
+
+export const fetchRelated = (caseId: number, limit = 15) =>
+  get<{ case_master_id: number; match_count: number; matches: MoMatch[] }>(
+    `/api/v1/mo/${caseId}/related?limit=${limit}`,
   );
 
 export const fetchMoCase = (caseId: number) => get<MoCase>(`/api/v1/mo/${caseId}`);

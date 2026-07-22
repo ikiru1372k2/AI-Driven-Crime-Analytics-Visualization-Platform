@@ -12,11 +12,17 @@ import {
   fetchMoCase,
   fetchMoProfiles,
   fetchMoRun,
+  fetchMoVocabulary,
+  fetchRelated,
   MO_FIELDS,
   type MoCase,
   type MoListRow,
+  type MoMatch,
   type MoRun,
+  type MoVocabulary,
 } from "../lib/moApi";
+
+const PAGE_SIZE = 40;
 
 const UNKNOWN = "UNKNOWN";
 
@@ -47,22 +53,64 @@ export function MoView() {
   const [detail, setDetail] = useState<MoCase | null>(null);
   const [span, setSpan] = useState<[number, number] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // search + paging are server-side: only one page is ever fetched
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [related, setRelated] = useState<MoMatch[] | null>(null);
+  const [loadingRelated, setLoadingRelated] = useState(false);
+  // MO attribute filters — "find cases committed THIS way", without needing
+  // to already have a case in hand
+  const [vocab, setVocab] = useState<MoVocabulary | null>(null);
+  const [action, setAction] = useState("");
+  const [target, setTarget] = useState("");
+  const [mobility, setMobility] = useState("");
+  const hasFilters = Boolean(query || action || target || mobility);
 
   useEffect(() => {
     fetchMoRun().then(setRun).catch((e) => setError(String(e)));
-    fetchMoProfiles(60)
-      .then((r) => {
-        setRows(r.profiles);
-        if (r.profiles.length) setSelected(r.profiles[0].case_master_id);
-      })
-      .catch((e) => setError(String(e)));
+    fetchMoVocabulary().then(setVocab).catch(() => {});
   }, []);
+
+  // debounce so typing an FIR number does not fire a request per keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchMoProfiles({
+        q: query,
+        action,
+        target,
+        mobility,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      })
+        .then((r) => {
+          setRows(r.profiles);
+          setTotal(r.total);
+          if (r.profiles.length && selected == null) {
+            setSelected(r.profiles[0].case_master_id);
+          }
+        })
+        .catch((e) => setError(String(e)));
+    }, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, action, target, mobility, page]);
 
   useEffect(() => {
     if (selected == null) return;
     setSpan(null);
+    setRelated(null); // related belongs to the previously selected case
     fetchMoCase(selected).then(setDetail).catch((e) => setError(String(e)));
   }, [selected]);
+
+  const showRelated = () => {
+    if (selected == null) return;
+    setLoadingRelated(true);
+    fetchRelated(selected)
+      .then((r) => setRelated(r.matches))
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoadingRelated(false));
+  };
 
   if (error) {
     return (
@@ -105,7 +153,88 @@ export function MoView() {
           </div>
         )}
 
-        <p className="section-label">Cases ({rows.length})</p>
+        <p className="section-label">Find a case</p>
+        <input
+          className="mo-search"
+          placeholder="FIR number or words in the narrative…"
+          value={query}
+          aria-label="Search FIRs by number or narrative text"
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPage(0);
+          }}
+        />
+
+        {vocab && (
+          <div className="mo-filters">
+            <select
+              value={action}
+              aria-label="Filter by action"
+              onChange={(e) => {
+                setAction(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">Any action</option>
+              {vocab.crime_action.map((v) => (
+                <option key={v} value={v}>
+                  {v.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <select
+              value={target}
+              aria-label="Filter by target"
+              onChange={(e) => {
+                setTarget(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">Any target</option>
+              {vocab.target_type.map((v) => (
+                <option key={v} value={v}>
+                  {v.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <select
+              value={mobility}
+              aria-label="Filter by mobility"
+              onChange={(e) => {
+                setMobility(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">Any mobility</option>
+              {vocab.mobility.map((v) => (
+                <option key={v} value={v}>
+                  {v.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            {hasFilters && (
+              <button
+                className="mo-clear"
+                onClick={() => {
+                  setQuery("");
+                  setAction("");
+                  setTarget("");
+                  setMobility("");
+                  setPage(0);
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
+        <p className="section-label">
+          {total.toLocaleString()} case{total === 1 ? "" : "s"}{hasFilters ? " match" : ""}
+          {total > PAGE_SIZE && (
+            <> · showing {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + rows.length}</>
+          )}
+        </p>
         <ul className="mo-cases" aria-label="Cases with extracted MO">
           {rows.map((r) => (
             <li key={r.case_master_id}>
@@ -120,8 +249,29 @@ export function MoView() {
               </button>
             </li>
           ))}
-          {rows.length === 0 && <li className="muted">loading…</li>}
+          {rows.length === 0 && (
+            <li className="muted">
+              {hasFilters ? "no FIR matches these filters" : "loading…"}
+            </li>
+          )}
         </ul>
+
+        {total > PAGE_SIZE && (
+          <div className="mo-pager">
+            <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+              ‹ Prev
+            </button>
+            <span className="muted small">
+              page {page + 1} of {Math.ceil(total / PAGE_SIZE)}
+            </span>
+            <button
+              disabled={(page + 1) * PAGE_SIZE >= total}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next ›
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* narrative + extraction */}
@@ -180,7 +330,46 @@ export function MoView() {
                   {l}
                 </p>
               ))}
+
+              <button className="expand" onClick={showRelated} disabled={loadingRelated}>
+                {loadingRelated ? "finding…" : "Show cases with a similar MO"}
+              </button>
             </div>
+
+            {related !== null && (
+              <div className="mo-panel">
+                <header className="mo-panel-head">
+                  <strong>Similar MO ({related.length})</strong>
+                  <span className="badge">Potential association — unconfirmed</span>
+                </header>
+                {related.length === 0 && (
+                  <p className="muted small">
+                    No case shares enough stated attributes with this one. Narratives
+                    that simply omit details are never counted as agreement.
+                  </p>
+                )}
+                <ul className="mo-related">
+                  {related.map((m) => (
+                    <li key={m.case_master_id}>
+                      <button
+                        className="mo-related-row"
+                        onClick={() => setSelected(m.case_master_id)}
+                      >
+                        <span className="mo-rel-id">FIR {m.case_master_id}</span>
+                        <span className="mo-rel-why">{m.explanation}</span>
+                        <span className="mo-rel-score">{(m.score * 100).toFixed(0)}%</span>
+                      </button>
+                      <p className="mo-rel-preview">{m.narrative_preview}</p>
+                    </li>
+                  ))}
+                </ul>
+                {related.length > 0 && (
+                  <p className="muted small">
+                    A lead to check — not a finding that the same person is responsible.
+                  </p>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <p className="muted" style={{ padding: "2rem" }}>

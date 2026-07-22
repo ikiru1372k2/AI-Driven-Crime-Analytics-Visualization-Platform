@@ -206,3 +206,39 @@ def test_mo_response_is_ai_derived_with_model_version(client):
 
 def test_mo_unknown_case_404(client):
     assert client.get("/api/v1/mo/99999999").status_code == 404
+
+
+def test_mo_vocabulary_comes_from_the_schema(client):
+    """Filter options must not drift from what the extractor may produce."""
+    from kavach.analytics.mo.schema import MOBILITY
+
+    vocab = client.get("/api/v1/mo/vocabulary").json()
+    assert set(vocab) == {"crime_action", "target_type", "mobility"}
+    assert set(vocab["mobility"]) <= set(MOBILITY)
+    assert "motorcycle" in vocab["mobility"]
+
+
+def test_mo_filters_narrow_results(client):
+    from kavach.api.mo_routes import reset_mo_store
+
+    reset_mo_store()
+    everything = client.get("/api/v1/mo/profiles", params={"limit": 1}).json()["total"]
+    filtered = client.get(
+        "/api/v1/mo/profiles", params={"action": "snatching", "limit": 1}
+    ).json()
+    assert 0 < filtered["total"] < everything
+    # and the filter is actually applied to the rows returned
+    rows = client.get(
+        "/api/v1/mo/profiles", params={"action": "snatching", "limit": 5}
+    ).json()["profiles"]
+    assert all(r["crime_action"]["value"] == "snatching" for r in rows)
+    reset_mo_store()
+
+
+def test_mo_pagination_returns_distinct_pages(client):
+    first = client.get("/api/v1/mo/profiles", params={"limit": 5, "offset": 0}).json()
+    second = client.get("/api/v1/mo/profiles", params={"limit": 5, "offset": 5}).json()
+    ids_a = {p["case_master_id"] for p in first["profiles"]}
+    ids_b = {p["case_master_id"] for p in second["profiles"]}
+    assert ids_a and ids_b and not (ids_a & ids_b)
+    assert first["total"] == second["total"] > 5
