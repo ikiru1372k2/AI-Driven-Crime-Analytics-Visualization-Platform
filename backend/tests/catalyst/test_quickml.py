@@ -112,3 +112,41 @@ def test_unwrap_and_as_dict():
     assert quickml._unwrap({"x": 1}) == {"x": 1}
     assert quickml._as_dict([{"y": 2}]) == {"y": 2}
     assert quickml._as_dict(5) == {"prediction": 5}
+
+
+def test_llm_sends_chat_request_and_reads_response(monkeypatch):
+    """The GLM endpoint is an OpenAI-style chat API: model + messages, thinking
+    disabled, org header present, generated text in the `response` field."""
+    seen = {}
+
+    def fake_urlopen(req, timeout=0):
+        if req.full_url.endswith("/oauth/v2/token"):
+            return FakeResp(json.dumps({"access_token": "AT", "expires_in": 3600}).encode())
+        seen["auth"] = req.get_header("Authorization")
+        seen["org"] = req.get_header("Catalyst-org")
+        seen["body"] = json.loads(req.data.decode())
+        return FakeResp(json.dumps({"response": "Theft is rising in this area."}).encode())
+
+    monkeypatch.setattr(quickml.urllib.request, "urlopen", fake_urlopen)
+    client = _oauth_client(
+        llm_endpoint="https://api.catalyst.zoho.in/quickml/v1/project/1/glm/chat",
+        llm_model="crm-di-glm47b_30b_it",
+    )
+    out = client.llm("Rewrite: theft rising.")
+    assert out == "Theft is rising in this area."
+    assert seen["auth"] == "Zoho-oauthtoken AT"
+    assert seen["org"] == "60078928452"
+    body = seen["body"]
+    assert body["model"] == "crm-di-glm47b_30b_it"
+    assert body["stream"] is False
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    roles = [m["role"] for m in body["messages"]]
+    assert roles == ["system", "user"]
+    assert body["messages"][-1]["content"] == "Rewrite: theft rising."
+
+
+def test_llm_requires_endpoint_and_model():
+    with pytest.raises(QuickMLUnavailable, match="llm endpoint not configured"):
+        _oauth_client().llm("x")
+    with pytest.raises(QuickMLUnavailable, match="llm model id not configured"):
+        _oauth_client(llm_endpoint="https://x/glm/chat").llm("x")
