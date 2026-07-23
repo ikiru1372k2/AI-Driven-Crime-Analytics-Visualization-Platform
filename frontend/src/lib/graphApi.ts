@@ -117,6 +117,37 @@ export function fetchNodeDetail(nodeType: NodeType, refId: string): Promise<Node
   return get(`/api/v1/graph/nodes/${nodeType}/${encodeURIComponent(refId)}`);
 }
 
+/** A person named on a case (accused or victim) — a plain fact restatement. */
+export interface CasePerson {
+  name: string | null;
+  age: number | null;
+  gender: string | null;
+}
+
+/** Everything we know about one FIR — served instantly from the warm case
+ *  cache (no graph metrics, no cross-FIR linking — PERF-001). */
+export interface CaseBasic {
+  CaseMasterID: string;
+  CrimeNo: string | null;
+  registered_date: string | null;
+  incident_from: string | null;
+  subhead_name: string | null;
+  head_name: string | null;
+  category: string | null;
+  gravity: string | null;
+  status: string | null;
+  station_name: string | null;
+  district_name: string | null;
+  accused: CasePerson[];
+  victims: CasePerson[];
+  narrative: string | null;
+}
+
+/** Fetch the basic detail for one case (the graph's case-click panel). */
+export function fetchCaseBasic(caseId: string): Promise<{ case: CaseBasic }> {
+  return get(`/api/cases/${encodeURIComponent(caseId)}`);
+}
+
 /** Attribute filters for association search (all optional, AND-combined). */
 export interface AssocFilters {
   subhead_id?: string;

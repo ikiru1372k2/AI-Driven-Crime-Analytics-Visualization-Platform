@@ -13,10 +13,12 @@ import { type Core } from "cytoscape";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchAssociations,
+  fetchCaseBasic,
   fetchClassifications,
   fetchNodeDetail,
   fetchSubgraph,
   type AssocFilters,
+  type CaseBasic,
   type GraphEdge,
   type GraphNode,
   type NodeDetail,
@@ -26,9 +28,16 @@ import {
 import { useCachedQuery } from "../lib/queryCache";
 import { GraphControls } from "./GraphControls";
 import { GraphDetailPanel } from "./GraphDetailPanel";
+import { GraphHoverTooltip } from "./GraphHoverTooltip";
 import { GraphRail } from "./GraphRail";
 import { Spinner } from "./Loading";
-import { ALL_VIEW_KEYS, canNavigateNode, DEFAULT_SEED_CASE } from "./graphConfig";
+import {
+  ALL_VIEW_KEYS,
+  canNavigateNode,
+  DEFAULT_SEED_CASE,
+  expandLoadingMessage,
+  type ViewSnapshot,
+} from "./graphConfig";
 import { initCytoscape, type HoverInfo } from "./graphCytoscape";
 import { buildPreFilter, type SeedAttrs } from "./graphPreFilter";
 
@@ -57,6 +66,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   // Legend is tiny and static — cache it so tab revisits don't refetch (PERF-001).
   const { data: legend = [] } = useCachedQuery("graph:classifications", fetchClassifications);
   const [detail, setDetail] = useState<NodeDetail | null>(null);
+  const [caseBasic, setCaseBasic] = useState<CaseBasic | null>(null);
   const [edgeDetail, setEdgeDetail] = useState<GraphEdge | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [viewDims, setViewDims] = useState<Set<string>>(() => new Set(ALL_VIEW_KEYS));
@@ -109,26 +119,15 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [seedType, setSeedType] = useState<NodeType>(seed?.type ?? "CASE");
   const [seedId, setSeedId] = useState<string>(seed?.id ?? "");
   const [loading, setLoading] = useState(false);
+  // A specific message for the centered loading cover, set per action so the
+  // user knows exactly what's being fetched ("Loading theft cases similar to
+  // this case…", "Filtering cases, please wait…").
+  const [loadingMsg, setLoadingMsg] = useState("Loading…");
   const [error, setError] = useState<string | null>(null);
   // previous views (graph + seed) so Back restores the prior view AND the seed
   const mergedRef = useRef(merged);
   const seedRef = useRef({ type: seedType, id: seedId });
-  // A view snapshot is the graph AND everything the stats bar / pager / zoom
-  // read from, so Back restores a view exactly as it was — including its stats.
-  interface ViewSnapshot {
-    nodes: Map<string, GraphNode>;
-    edges: Map<string, GraphEdge>;
-    type: NodeType;
-    id: string;
-    pageInfo: { total: number; offset: number; count: number } | null;
-    activeFocus: string | null;
-    focusId: string | null;
-    expandable: Record<string, number>;
-    page: number;
-    drilled: boolean;
-    filters: AssocFilters;
-    resultCount: number | null;
-  }
+  // Back stack of ViewSnapshots (see graphConfig) — restores a view exactly.
   const historyRef = useRef<ViewSnapshot[]>([]);
   useEffect(() => {
     mergedRef.current = merged;
@@ -160,6 +159,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
 
   const load = useCallback(
     async (type: NodeType, id: string, merge = false) => {
+      if (!merge) setLoadingMsg("Loading case overview…");
       setLoading(true);
       setError(null);
       try {
@@ -210,6 +210,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         });
         if (!merge) {
           setDetail(null);
+          setCaseBasic(null);
           setEdgeDetail(null);
         }
       } catch (e) {
@@ -286,12 +287,18 @@ export function GraphView({ seed, onSeed, theme }: Props) {
 
   // Applying a Filter re-runs the current expansion from the first page.
   const reloadExpansionsFiltered = useCallback(async () => {
-    if (activeFocusRef.current) await showFocus(activeFocusRef.current, 0);
+    if (activeFocusRef.current) {
+      setLoadingMsg("Filtering cases, please wait…");
+      await showFocus(activeFocusRef.current, 0);
+    }
   }, [showFocus]);
   // page through a large expansion
   const gotoPage = useCallback(
     (pg: number) => {
-      if (activeFocusRef.current) void showFocus(activeFocusRef.current, pg);
+      if (activeFocusRef.current) {
+        setLoadingMsg("Loading more cases…");
+        void showFocus(activeFocusRef.current, pg);
+      }
     },
     [showFocus],
   );
@@ -319,6 +326,16 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const openNode = useCallback((type: NodeType, refId: string) => {
     setEdgeDetail(null);
     setShowDetail(false); // load it, but keep it behind the info button until asked
+    if (type === "CASE") {
+      // A case click shows the FIR at a glance — served instantly from the warm
+      // case cache (no heavy graph metrics / cross-FIR linking — PERF-001).
+      setDetail(null);
+      fetchCaseBasic(refId)
+        .then((r) => setCaseBasic(r.case))
+        .catch((e) => setError(String(e)));
+      return;
+    }
+    setCaseBasic(null);
     fetchNodeDetail(type, refId)
       .then(setDetail)
       .catch((e) => setError(String(e)));
@@ -360,6 +377,8 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       filtersRef.current = pre;
       firstFilter.current = true; // we load below; don't double-fire the filter effect
       setFilters(pre);
+      const label = mergedRef.current.nodes.get(key)?.label ?? "";
+      setLoadingMsg(expandLoadingMessage(type, label));
       void showFocus(key, 0);
     },
     [snapshot, load, showFocus, preFilterFor],
@@ -434,12 +453,14 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         const e = merged.edges.get(edgeId);
         if (e) {
           setDetail(null);
+          setCaseBasic(null);
           setEdgeDetail(e);
           setShowDetail(false); // surface via the info button, open on click
         }
       },
       onCanvasTap: () => {
         setDetail(null);
+        setCaseBasic(null);
         setEdgeDetail(null);
         setShowDetail(false);
       },
@@ -533,27 +554,11 @@ export function GraphView({ seed, onSeed, theme }: Props) {
               : ""}
           </div>
         )}
-        {hover && (
-          <div
-            className="graph-tooltip"
-            style={{ left: hover.x, top: hover.y }}
-            aria-hidden="true"
-          >
-            <span className="tt-type">{hover.type.replace(/_/g, " ").toLowerCase()}</span>
-            <span className="tt-label">{hover.label}</span>
-            <span className="tt-hint">
-              {hover.expandable
-                ? hover.type === "ACCUSED_RECORD" || hover.type === "VICTIM_RECORD"
-                  ? "click to expand similar people"
-                  : "click to expand related cases"
-                : "click to view details"}
-            </span>
-          </div>
-        )}
+        {hover && <GraphHoverTooltip hover={hover} />}
         <div ref={containerRef} className="graph-canvas" aria-label="Association graph canvas" />
         {loading && (
-          <div className="graph-loading" role="status">
-            <Spinner label="loading…" />
+          <div className="graph-loading" role="status" aria-live="polite">
+            <Spinner label={loadingMsg} />
           </div>
         )}
 
@@ -578,6 +583,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           <GraphDetailPanel
             detail={detail}
             edgeDetail={edgeDetail}
+            caseBasic={caseBasic}
             canNavigate={canNavigateNode(detail?.node, expandable, merged.edges)}
             onClose={() => setShowDetail(false)}
             onNavigate={(type, id) => {

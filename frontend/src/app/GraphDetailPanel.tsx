@@ -1,12 +1,15 @@
 /** The node / edge detail card for the association graph. Extracted from
  *  GraphView so that component stays under the source-size gate. Provenance-
  *  first: every edge shows its evidence FIR; every metric its method/run. */
-import type { GraphEdge, NodeDetail, NodeType } from "../lib/graphApi";
+import type { CaseBasic, CasePerson, GraphEdge, NodeDetail, NodeType } from "../lib/graphApi";
 import { NODE_COLORS } from "./graphConfig";
 
 interface Props {
   detail: NodeDetail | null;
   edgeDetail: GraphEdge | null;
+  /** Basic detail for a clicked case node — everything we know about the FIR,
+   *  served instantly from the warm cache (no graph metrics — PERF-001). */
+  caseBasic: CaseBasic | null;
   /** Whether "Navigate here" is offered. For people it's only meaningful when
    *  the person has an identity match under a different name (else there's
    *  nothing new to explore); places/charges/cases can always be navigated. */
@@ -16,14 +19,80 @@ interface Props {
   onNavigateCase: (caseId: string) => void;
 }
 
+/** "Name, 34" — a person as we know them on the FIR (age omitted if unknown). */
+function personLabel(p: CasePerson): string {
+  const name = p.name ?? "Unknown";
+  return p.age != null ? `${name}, ${p.age}` : name;
+}
+
 export function GraphDetailPanel({
   detail,
   edgeDetail,
+  caseBasic,
   canNavigate,
   onClose,
   onNavigate,
   onNavigateCase,
 }: Props) {
+  if (caseBasic) {
+    const c = caseBasic;
+    const crime = c.subhead_name ?? c.head_name ?? "—";
+    return (
+      <aside className="graph-panel" aria-label="Case detail">
+        <header>
+          <span className="node-dot" style={{ background: NODE_COLORS.CASE }} aria-hidden />
+          <strong>FIR {c.CrimeNo ?? c.CaseMasterID}</strong>
+          <button className="close" aria-label="Close detail" onClick={onClose}>
+            ×
+          </button>
+        </header>
+        <p className="badge">Case record</p>
+        <dl className="metric-grid">
+          <dt>Crime</dt>
+          <dd>{crime}</dd>
+          <dt>District</dt>
+          <dd>{c.district_name ?? "—"}</dd>
+          <dt>Station</dt>
+          <dd>{c.station_name ?? "—"}</dd>
+          <dt>Registered</dt>
+          <dd>{c.registered_date ?? "—"}</dd>
+          <dt>Status</dt>
+          <dd>{c.status ?? "—"}</dd>
+        </dl>
+        <p className="section-label">Accused ({c.accused.length})</p>
+        {c.accused.length ? (
+          <ul className="case-list">
+            {c.accused.map((p, i) => (
+              <li key={i}>{personLabel(p)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted small">None recorded.</p>
+        )}
+        {c.victims.length > 0 && (
+          <>
+            <p className="section-label">Victims ({c.victims.length})</p>
+            <ul className="case-list">
+              {c.victims.map((p, i) => (
+                <li key={i}>{personLabel(p)}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        {c.narrative && (
+          <>
+            <p className="section-label">Narrative</p>
+            <p className="interpretation">{c.narrative}</p>
+          </>
+        )}
+        <button className="nav-btn" onClick={() => onNavigateCase(c.CaseMasterID)}>
+          Explore this case →
+        </button>
+        <p className="muted small">What we know from the FIR — no inference.</p>
+      </aside>
+    );
+  }
+
   if (detail) {
     return (
       <aside className="graph-panel" aria-label="Node detail">

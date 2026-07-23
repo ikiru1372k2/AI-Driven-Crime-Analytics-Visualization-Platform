@@ -73,6 +73,20 @@ def get_cases(
     }
 
 
+@router.get("/cases/{case_id}")
+def get_case(case_id: int) -> dict:
+    """Everything we know about one FIR — the basics, the people named on it,
+    and the narrative — for the graph's case-click panel.
+
+    Deliberately light (PERF-001): a pure restatement served from the warm
+    caches, no graph metrics or cross-FIR linking. It won't shadow ``/cases``
+    (that route has no trailing path segment)."""
+    case = data.case_detail(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"unknown case {case_id}")
+    return {"synthetic": True, "case": case, "intelligence": envelope(**_FACT_ENVELOPE)}
+
+
 @router.get("/hotspots")
 def get_hotspots(
     subhead_id: int | None = Query(default=None, description="crime sub-head, e.g. 71=Robbery"),
