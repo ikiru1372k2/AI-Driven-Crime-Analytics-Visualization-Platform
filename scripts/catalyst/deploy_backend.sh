@@ -18,6 +18,38 @@ BUILD="$ROOT/.catalyst-build/appsail"
 APP_NAME="${APPSAIL_APP_NAME:-kavach-analytics}"
 
 command -v catalyst >/dev/null || { echo "zcatalyst-cli not installed (npm i -g zcatalyst-cli)"; exit 1; }
+
+# -- deploy secrets ------------------------------------------------------------
+# The env_variables block below is regenerated from the SHELL on every deploy, so
+# a deploy run without the QuickML/Zoho secrets exported would bake in empty
+# strings and silently WIPE the live predictor's credentials (this happened once —
+# prod went "unavailable"). To make secrets consistent and the failure loud:
+#   1. auto-source a git-ignored scripts/catalyst/deploy.env if present (copy it
+#      from deploy.env.example and fill in real values — never committed, ADR-001);
+#   2. abort if any predictor secret is empty, unless ALLOW_UNCONFIGURED_QUICKML=1
+#      is set for an intentional demo/unconfigured deploy.
+DEPLOY_ENV="$ROOT/scripts/catalyst/deploy.env"
+if [ -f "$DEPLOY_ENV" ]; then
+  echo "sourcing deploy secrets from $DEPLOY_ENV"
+  set -a; . "$DEPLOY_ENV"; set +a
+fi
+
+if [ "${ALLOW_UNCONFIGURED_QUICKML:-0}" != "1" ]; then
+  missing=()
+  for v in KAVACH_QUICKML_RISK_ENDPOINT KAVACH_QUICKML_RISK_URL \
+           KAVACH_ZOHO_CLIENT_ID KAVACH_ZOHO_CLIENT_SECRET \
+           KAVACH_ZOHO_REFRESH_TOKEN KAVACH_QUICKML_ORG_ID; do
+    [ -z "${!v:-}" ] && missing+=("$v")
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    echo "ERROR: refusing to deploy — the FORECAST predictor would be UNCONFIGURED." >&2
+    echo "       Missing/empty: ${missing[*]}" >&2
+    echo "       Fill scripts/catalyst/deploy.env (see deploy.env.example) or export them." >&2
+    echo "       To deploy intentionally without the predictor: ALLOW_UNCONFIGURED_QUICKML=1" >&2
+    exit 1
+  fi
+fi
+
 : "${CATALYST_PROJECT_ID:?set CATALYST_PROJECT_ID (see docs/catalyst/appsail-deployment.md)}"
 : "${CATALYST_ORG_ID:?set CATALYST_ORG_ID}"
 
