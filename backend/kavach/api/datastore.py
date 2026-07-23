@@ -18,9 +18,11 @@ Liveness: each table is cached for ``KAVACH_DATASTORE_TTL`` seconds (a short TTL
 not the process lifetime), so an edit made in the Zoho console appears in the app
 within the TTL without a redeploy.
 
-Requires a refresh token scoped ``ZohoCatalyst.tables.rows.READ`` — a *different*
-scope from the QuickML token, minted as a separate console step. No secrets are
-read from the repo (ADR-001); everything comes from the environment via config.
+Requires a refresh token scoped ``ZohoCatalyst.zcql.CREATE`` — the ZCQL
+execute-query scope (named CREATE even for SELECT, because it executes a query
+resource; ``tables.rows.READ`` only covers the non-paging row API we don't use).
+A *different* scope from the QuickML token, minted as a separate console step. No
+secrets are read from the repo (ADR-001); everything comes from the environment.
 """
 
 from __future__ import annotations

@@ -26,10 +26,12 @@ class Settings:
     datastore_api_base: str = os.getenv(
         "KAVACH_DATASTORE_API_BASE", "https://api.catalyst.zoho.in"
     )
-    #: Self-client refresh token scoped ``ZohoCatalyst.tables.rows.READ`` — a
-    #: DIFFERENT scope from the QuickML token, minted as a separate console step.
-    #: Falls back to the shared refresh token if a dedicated one is not set.
-    #: Never committed (ADR-001).
+    #: Self-client refresh token scoped ``ZohoCatalyst.zcql.CREATE`` (the ZCQL
+    #: execute-query scope — named CREATE even for SELECT, since it executes a
+    #: query resource; ``tables.rows.READ`` only covers the non-paging row API we
+    #: don't use). A DIFFERENT scope from the QuickML token, minted as a separate
+    #: console step. Falls back to the shared refresh token if unset. Never
+    #: committed (ADR-001).
     datastore_refresh_token: str | None = os.getenv("KAVACH_DATASTORE_REFRESH_TOKEN")
     #: Seconds a fetched table is cached before a re-read picks up console edits.
     #: Short enough to feel live, long enough that a burst of requests shares one
