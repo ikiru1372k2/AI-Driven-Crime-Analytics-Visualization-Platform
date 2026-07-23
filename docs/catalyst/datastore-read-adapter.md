@@ -61,6 +61,13 @@ All read from the environment (see `backend/kavach/config.py`):
 Reuses the existing `ZOHO_CLIENT_ID` / `ZOHO_CLIENT_SECRET` / `ZOHO_ACCOUNTS_URL`
 and `CATALYST_PROJECT_ID` already set for QuickML.
 
+> **AppSail note:** the runtime reserves the `CATALYST_*` env prefix — a
+> `CATALYST_PROJECT_ID` key in `app-config.json`'s `env_variables` is rejected at
+> deploy with `HTTP 400 … reserved keywords`. The deploy script therefore writes
+> the id under the non-reserved alias `KAVACH_CATALYST_PROJECT_ID`, and
+> `config.py` reads that first, then falls back to `CATALYST_PROJECT_ID` (used
+> locally / in CI, where nothing is reserved).
+
 ## Enabling it
 
 The safe rollout is **merge with the default (`csv`), then flip the flag in the

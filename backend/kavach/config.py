@@ -11,7 +11,14 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Settings:
     env: str = os.getenv("KAVACH_ENV", "local")
-    catalyst_project_id: str | None = os.getenv("CATALYST_PROJECT_ID")
+    #: Catalyst project id. ``CATALYST_*`` is a reserved env prefix in the AppSail
+    #: runtime — it cannot be set in app-config.json's ``env_variables`` (the deploy
+    #: is rejected with HTTP 400 "reserved keywords"), so the deploy maps the id to
+    #: the non-reserved ``KAVACH_CATALYST_PROJECT_ID`` alias. Read that first, then
+    #: the plain name (used locally / in CI where nothing is reserved).
+    catalyst_project_id: str | None = (
+        os.getenv("KAVACH_CATALYST_PROJECT_ID") or os.getenv("CATALYST_PROJECT_ID")
+    )
     catalyst_env_id: str | None = os.getenv("CATALYST_ENV_ID")
 
     # --- Data source selector (CAT-002 / PR-B) ----------------------------
