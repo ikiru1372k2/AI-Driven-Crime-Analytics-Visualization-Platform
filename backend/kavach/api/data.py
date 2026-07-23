@@ -281,6 +281,37 @@ def _person_case_index() -> dict:
     return idx
 
 
+@timed_cache(_cache_ttl)
+def ranked_accused() -> list[dict]:
+    """Distinct accused persons, ranked by how many crimes they committed.
+
+    A "person" is the attribute identity name+age+gender (ADR-003 — never
+    PersonID); their crime count is the number of DISTINCT cases those records
+    span. Cheap O(n) group-by over the already-memoized ``_person_case_index``
+    (the same index the person-detail path uses) — deliberately NOT
+    ``resolve_identities`` (the O(n^2) path that times out). This backs the
+    Identities tab's ranked list and its per-person similarity search.
+    """
+    out: list[dict] = []
+    for key, members in _person_case_index().items():
+        role = key[0]
+        if role != "accused":
+            continue
+        districts = sorted({m["district_name"] for m in members if m["district_name"]})
+        out.append(
+            {
+                "name": members[0]["name"],
+                "age": members[0]["age"],
+                "gender": members[0]["gender"],
+                "districts": districts,
+                "case_count": len({str(m["case_id"]) for m in members}),
+            }
+        )
+    # most crimes first; stable secondary sort by name for deterministic paging
+    out.sort(key=lambda p: (-p["case_count"], (p["name"] or "").lower()))
+    return out
+
+
 def person_detail(role: str, record_id: str) -> dict | None:
     """A person (accused/victim) and every case they appear in, or None.
 

@@ -92,7 +92,10 @@ def _clear_caches() -> None:
     from kavach.analytics.risk import engine as risk_engine
 
     data.enriched_cases.cache_clear()
-    for name in ("case_narratives", "accused_records", "victim_records", "_person_case_index"):
+    for name in (
+        "case_narratives", "accused_records", "victim_records",
+        "_person_case_index", "ranked_accused",
+    ):
         fn = getattr(data, name, None)
         clear = getattr(fn, "cache_clear", None)
         if clear:
@@ -118,6 +121,7 @@ def _prime() -> None:
         ("enriched_cases", data.enriched_cases),
         ("accused_records", getattr(data, "accused_records", None)),
         ("victim_records", getattr(data, "victim_records", None)),
+        ("ranked_accused", getattr(data, "ranked_accused", None)),  # cheap O(n), Identities tab
         ("resolve_identities", resolve_identities),  # the ~90s O(n^2) step
         ("graph_context", graph_store.graph_context),
         # Model-backed analytics: memoized per default params so /anomalies and

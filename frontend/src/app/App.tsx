@@ -23,7 +23,7 @@ import { MapView } from "./MapView";
 import { Sidebar } from "./Sidebar";
 import { HotspotDetail } from "./HotspotDetail";
 import { Overview } from "./Overview";
-import { IdentityReview } from "./IdentityReview";
+import { IdentityExplorer } from "./IdentityExplorer";
 import { GraphView, type GraphSeed } from "./GraphView";
 import { MoView } from "./MoView";
 import { ForecastView } from "./ForecastView";
@@ -145,7 +145,7 @@ export function App() {
 
       {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
 
-      {view === "identities" && <IdentityReview />}
+      {view === "identities" && <IdentityExplorer />}
 
       {view === "mo" && <MoView />}
 

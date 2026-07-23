@@ -266,3 +266,77 @@ def resolve_identities(*, district_id: int | None = None, min_cluster_size: int 
 #: expose the underlying cache controls on the public name (warmer/tests use it)
 resolve_identities.cache_clear = _resolve_cached.cache_clear
 resolve_identities.cache_info = _resolve_cached.cache_info
+
+
+def find_similar(
+    name: str,
+    age: int | None = None,
+    gender: str | None = None,
+    *,
+    limit: int = 50,
+    min_name_sim: float = 0.5,
+) -> list[dict]:
+    """People whose attributes resemble one query person — an ON-DEMAND search.
+
+    The single-person counterpart to ``resolve_identities``: it scores the query
+    (name, optional age, optional sex) against every DISTINCT accused person once
+    — O(n), never the O(n^2) all-pairs scan — so it can run live on the request
+    path without timing out. Reuses the same explainable scorers (``_name_sim``,
+    ``_age_score``) and weights as the cluster path, so a match here means the
+    same thing there.
+
+    Matching (ADR-003, attributes only):
+      - **sex** is a hard filter when given (opposite gender never matches);
+      - **name** must clear ``min_name_sim`` (unrelated names are dropped);
+      - **age**, when given, is a band: a gap over ``_MAX_AGE_GAP`` is a hard
+        contradiction and excluded; otherwise it blends into the score. With no
+        age (the name-only top search) the score is the name similarity alone.
+    Returns matches sorted by confidence desc, capped at ``limit``.
+    """
+    q_tokens = _tokens(name)
+    q_gender = (gender or "").strip() or None
+    matches: list[dict] = []
+    for person in data.ranked_accused():
+        if q_gender and person["gender"] and person["gender"] != q_gender:
+            continue  # sex is a hard filter
+        name_sim = _name_sim(q_tokens, _tokens(person["name"]))
+        if name_sim < min_name_sim:
+            continue
+
+        contributing, contradictory = [], []
+        contributing.append(
+            f"name: {name!r} ~ {person['name']!r} ({name_sim:.2f})"
+            if name_sim >= 0.8
+            else f"name partially matches ({name_sim:.2f})"
+        )
+        if q_gender and person["gender"]:
+            contributing.append(f"same sex ({person['gender']})")
+
+        if age is not None and person["age"] is not None:
+            age_sc, gap = _age_score(age, person["age"])
+            if gap is not None and gap > _MAX_AGE_GAP:
+                continue  # age band: too far apart to be the same person
+            score = _W_NAME * name_sim + _W_AGE * age_sc
+            if gap is not None and gap <= 3:
+                contributing.append(f"age within {gap} year{'s' if gap != 1 else ''}")
+        else:
+            gap = None
+            score = name_sim  # name-only search: no age signal to blend
+
+        matches.append(
+            {
+                "name": person["name"],
+                "age": person["age"],
+                "gender": person["gender"],
+                "districts": person["districts"],
+                "case_count": person["case_count"],
+                "confidence": round(score, 3),
+                "name_sim": round(name_sim, 3),
+                "age_gap": gap,
+                "contributing": contributing,
+                "contradictory": contradictory,
+                "cross_district": len(person["districts"]) > 1,
+            }
+        )
+    matches.sort(key=lambda m: (-m["confidence"], -m["case_count"]))
+    return matches[:limit]
