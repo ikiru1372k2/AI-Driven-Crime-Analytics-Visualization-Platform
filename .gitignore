@@ -15,6 +15,8 @@ frontend/dist/
 .env
 .env.*
 *.local
+# Catalyst deploy secrets — real values live here locally; template is deploy.env.example
+scripts/catalyst/deploy.env
 
 # Catalyst local artifacts (credentials/state — never commit)
 .catalyst/

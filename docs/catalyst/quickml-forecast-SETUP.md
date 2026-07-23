@@ -15,7 +15,7 @@ per-district crime forecast.
 The forecast number is produced by a **Zoho QuickML** regression model, called
 live from our backend on every page load — we deliberately do NOT model locally
 (a hand-rolled model on synthetic data wouldn't be trustworthy). An optional
-**Qwen 2.5** call rewrites the summary into plainer English but can never change a
+**GLM 4.7** call rewrites the summary into plainer English but can never change a
 number.
 
 Right now the tab shows **"Forecast unavailable — prediction service not
@@ -32,8 +32,8 @@ From the repo root:
 PYTHONPATH=backend backend/.venv/Scripts/python.exe scripts/risk_train_export.py
 ```
 
-This writes **`data/risk_train.csv`** (it's git-ignored — that's expected).
-You should see `wrote NN rows -> data/risk_train.csv`.
+This writes **`data/risk_train_model.csv`** (it's git-ignored — that's expected).
+You should see `wrote NN rows -> data/risk_train_model.csv`.
 
 ---
 
@@ -42,7 +42,7 @@ You should see `wrote NN rows -> data/risk_train.csv`.
 In the Catalyst console:
 
 1. ☐ Go to **QuickML → New pipeline**.
-2. ☐ Upload **`data/risk_train.csv`**.
+2. ☐ Upload **`data/risk_train_model.csv`**.
 3. ☐ Set the **target column** to:  `target_next_count`
 4. ☐ Set the **feature columns** to exactly these seven (do **not** include
    `district_id` or `district_name` — they are labels, not features):
@@ -61,33 +61,46 @@ In the Catalyst console:
 
 ---
 
-## Step 3 — (Optional) Enable Qwen for plain-English summaries  ☐
+## Step 3 — (Optional) Enable GLM for plain-English summaries  ☐
 
 Skip this and the forecast still works — districts just get a plain templated
-sentence instead of a Qwen-written one.
+sentence instead of a GLM-written one.
 
-1. ☐ Catalyst console → **QuickML → LLM Serving** → enable **Qwen 2.5-14B-Instruct**
+1. ☐ Catalyst console → **QuickML → LLM Serving** → enable **GLM 4.7**
    (available in the **IN** data center).
-2. ☐ Copy the **serving endpoint URL**.
-3. ☐ Generate an **OAuth token** with the LLM-serving scope.
+2. ☐ Copy the **serving endpoint URL** (ends in `/glm/chat`) and its **model id**
+   (e.g. `crm-di-glm47b_30b_it`).
+
+> The summaries reuse the **same** self-client OAuth token as the predictor
+> (scope `QuickML.deployment.READ`) — no separate token is needed.
 
 ---
 
-## Step 4 — Set the env vars and deploy  ☐
+## Step 4 — Fill deploy.env and deploy  ☐
 
-Never commit these values (ADR-001) — they are environment-only. Export them,
-then run the existing deploy script (it already wires them into `app-config.json`):
+The live predictor is called over a **self-client OAuth REST** path (works from the
+anonymous AppSail runtime), so it needs the Zoho self-client trio, not just an
+endpoint key. Put all values in a **git-ignored** `deploy.env` — never commit them
+(ADR-001). The deploy script auto-sources it and **refuses to deploy if any
+predictor secret is empty**, so a deploy can no longer silently wipe the live
+credentials.
 
 ```bash
-export KAVACH_QUICKML_RISK_ENDPOINT="<endpoint key from Step 2>"
-
-# only if you did Step 3:
-export KAVACH_QUICKML_LLM_ENDPOINT="<qwen serving url>"
-export KAVACH_QUICKML_LLM_TOKEN="<oauth token>"
-# KAVACH_QUICKML_LLM_MODEL defaults to qwen-2.5-14b-instruct — leave unset
+cp scripts/catalyst/deploy.env.example scripts/catalyst/deploy.env
+# edit scripts/catalyst/deploy.env and fill in:
+#   KAVACH_QUICKML_RISK_ENDPOINT   endpoint key (from Step 2)
+#   KAVACH_QUICKML_RISK_URL        full predict URL: …/endpoints/<id>/predict
+#   KAVACH_ZOHO_CLIENT_ID          self-client id
+#   KAVACH_ZOHO_CLIENT_SECRET      self-client secret
+#   KAVACH_ZOHO_REFRESH_TOKEN      refresh token (scope QuickML.deployment.READ)
+#   KAVACH_QUICKML_ORG_ID          e.g. 60078928452
+#   # optional (Step 3): KAVACH_QUICKML_LLM_ENDPOINT / KAVACH_QUICKML_LLM_MODEL_ID
 
 bash scripts/catalyst/deploy_backend.sh
 ```
+
+> To deploy intentionally **without** the predictor (a plain demo build), set
+> `ALLOW_UNCONFIGURED_QUICKML=1` — the tab then shows the honest "unavailable" panel.
 
 ---
 
