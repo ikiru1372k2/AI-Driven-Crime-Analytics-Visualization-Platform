@@ -34,6 +34,7 @@ ENVELOPED_ROUTES = [
     "/api/cases",
     "/api/hotspots",
     "/api/trends",
+    "/api/anomalies",
     "/api/districts",
     "/api/overview",
 ]
@@ -126,6 +127,16 @@ def test_analytics_response_carries_valid_envelope(client, route):
     assert parsed.classification in DataClassification
     assert parsed.classification_label == CLASSIFICATION_LABELS[parsed.classification]
     assert parsed.method.method_name and parsed.method.method_version
+
+
+def test_anomalies_envelope_is_statistical_with_model_provenance(client):
+    """Detection is the explainable statistic (STATISTICAL_INFERENCE), but the
+    corroborating IsolationForest's model_version must ride along for provenance."""
+    body = client.get("/api/anomalies").json()
+    env = IntelligenceEnvelope.model_validate(body["intelligence"])
+    assert env.classification is DataClassification.STATISTICAL_INFERENCE
+    assert env.method.model_version, "the ML model version must be carried"
+    assert body["synthetic"] is True
 
 
 def test_classification_legend_route_maps_one_to_one(client):

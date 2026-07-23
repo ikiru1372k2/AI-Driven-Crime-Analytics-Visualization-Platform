@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from kavach.analytics.anomaly import detect_anomalies
+from kavach.analytics.anomaly import engine as anomaly_engine
 from kavach.analytics.association import find_associations
 from kavach.analytics.entity import resolve_identities
 from kavach.analytics.hotspot import detect_hotspots
@@ -121,6 +123,34 @@ def get_trends(
         method_name=trends_engine.METHOD_NAME,
         method_version=trends_engine.METHOD_VERSION,
         limitations=("synthetic data (ADR-011)",),
+    )
+    return result
+
+
+@router.get("/anomalies")
+def get_anomalies(
+    window_days: int = Query(default=30, ge=7, le=90, description="candidate window"),
+    min_score: float = Query(default=2.5, ge=0, description="min modified-z to flag"),
+    max_flags: int = Query(default=25, ge=1, le=100),
+) -> dict:
+    """Out-of-place cases (FLAG tab) — robust point-anomaly stats + IsolationForest.
+
+    Each flag is scored by transparent statistics (so it carries a human-checkable
+    reason) and corroborated by a scikit-learn IsolationForest; an optional GLM-4.7
+    pass rephrases the reason, fenced against invented numbers. Detection is the
+    explainable statistic, so the response envelope is STATISTICAL_INFERENCE; the
+    ML model version rides along for provenance.
+    """
+    result = detect_anomalies(window_days=window_days, min_score=min_score, max_flags=max_flags)
+    result["intelligence"] = envelope(
+        classification=DataClassification.STATISTICAL_INFERENCE,
+        method_name=anomaly_engine.METHOD_NAME,
+        method_version=anomaly_engine.METHOD_VERSION,
+        model_version=result.get("model_version"),
+        limitations=(
+            "synthetic data (ADR-011)",
+            "leads to review, not conclusions — each flag is a case to check, not a finding",
+        ),
     )
     return result
 

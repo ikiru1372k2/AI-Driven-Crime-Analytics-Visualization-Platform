@@ -277,6 +277,49 @@ export interface RiskResponse {
 export const fetchRisk = (windowDays = 30) =>
   getJSON<RiskResponse>("/api/risk", { window_days: windowDays });
 
+// --- anomaly detection (FLAG tab: stats + IsolationForest + GLM) ---
+
+export type AnomalyType = "many_accused" | "odd_hour" | "rare_offence";
+export type AnomalySeverity = "critical" | "serious" | "warning";
+
+export interface AnomalyFlag {
+  case_id: string;
+  type: AnomalyType;
+  title: string;
+  severity: AnomalySeverity;
+  score: number; // modified z-score of the headline signal
+  reason: string; // human-checkable "why" (template, or GLM-rephrased)
+  signals: AnomalyType[]; // every signal that fired for this case
+  explanation_source: string; // "template" or the LLM model id
+  ml_confirmed: boolean; // IsolationForest independently agrees it's an outlier
+  subject: {
+    station_id: string;
+    station_name: string;
+    district_name: string;
+    subhead_id: string;
+    subhead_name: string;
+  };
+  when: string | null; // incident/registration timestamp
+  sample_case_ids: string[]; // evidence FIRs to open
+  rank: number;
+}
+
+export interface AnomaliesResponse {
+  synthetic: boolean;
+  params: { window_days: number; min_score: number; max_flags: number };
+  model_version: string;
+  flag_count: number;
+  flags: AnomalyFlag[];
+  intelligence: IntelligenceEnvelope;
+}
+
+export const fetchAnomalies = (windowDays = 30, minScore = 2.5, maxFlags = 25) =>
+  getJSON<AnomaliesResponse>("/api/anomalies", {
+    window_days: windowDays,
+    min_score: minScore,
+    max_flags: maxFlags,
+  });
+
 // --- entity resolution (identity candidates) ---
 
 export interface IdentityMember {

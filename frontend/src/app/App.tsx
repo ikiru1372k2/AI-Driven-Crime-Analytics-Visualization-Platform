@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
+  fetchAnomalies,
   fetchCases,
   fetchDistricts,
   fetchHotspots,
@@ -27,6 +28,7 @@ import { GraphView, type GraphSeed } from "./GraphView";
 import { EvidenceView } from "./EvidenceView";
 import { MoView } from "./MoView";
 import { ForecastView } from "./ForecastView";
+import { AnomaliesView } from "./AnomaliesView";
 import { CommandNav, type ModuleView } from "./CommandNav";
 import { TimeScrubber } from "./TimeScrubber";
 import type { NodeType } from "../lib/graphApi";
@@ -58,6 +60,7 @@ export function App() {
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [alerts, setAlerts] = useState<TrendAlert[]>([]);
   const [districtStats, setDistrictStats] = useState<DistrictStat[]>([]);
+  const [flagCount, setFlagCount] = useState(0);
   const [selectedRank, setSelectedRank] = useState<number | null>(initial.hotspot);
   const [graphSeed, setGraphSeed] = useState<GraphSeed | null>(parseSeed(initial.graphSeed));
   const [loading, setLoading] = useState(true);
@@ -67,6 +70,7 @@ export function App() {
   useEffect(() => {
     fetchMeta().then(setMeta).catch((e) => setError(String(e)));
     fetchDistricts().then((d) => setDistrictStats(d.districts)).catch(() => {});
+    fetchAnomalies().then((a) => setFlagCount(a.flag_count)).catch(() => {});
   }, []);
 
   // (re)query cases + hotspots + active alerts whenever filters change
@@ -135,6 +139,7 @@ export function App() {
         onView={setView}
         alertCount={alerts.length}
         identityCount={0}
+        flagCount={flagCount}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
       />
@@ -147,6 +152,15 @@ export function App() {
 
       {view === "forecast" && (
         <ForecastView
+          onOpenCase={(caseId) => {
+            setGraphSeed({ type: "CASE", id: String(caseId) });
+            setView("graph");
+          }}
+        />
+      )}
+
+      {view === "anomalies" && (
+        <AnomaliesView
           onOpenCase={(caseId) => {
             setGraphSeed({ type: "CASE", id: String(caseId) });
             setView("graph");
