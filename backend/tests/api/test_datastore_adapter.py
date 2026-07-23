@@ -191,10 +191,14 @@ def test_source_selector_toggles_read(monkeypatch):
     assert called["name"] == "District" and list(out["x"]) == ["1"]
 
 
-def test_source_selector_defaults_to_csv(monkeypatch):
+def test_source_selector_defaults_to_csv(monkeypatch, tmp_path):
     ns = types.SimpleNamespace(data_source="csv", datastore_cache_ttl=999)
     monkeypatch.setattr(data, "settings", ns)
     assert data._use_datastore() is False
     assert data._cache_ttl() == float("inf")
-    # CSV path still reads a real bundled file
-    assert not data._read("District").empty
+    # CSV path reads from data_dir(); point it at a temp CSV so the test does not
+    # depend on the generated dataset (absent in CI).
+    (tmp_path / "District.csv").write_text("DistrictID,DistrictName\n1,Alpha\n")
+    monkeypatch.setenv("KAVACH_DATA_DIR", str(tmp_path))
+    out = data._read("District")
+    assert list(out["DistrictName"]) == ["Alpha"]
