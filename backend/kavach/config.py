@@ -37,15 +37,19 @@ class Settings:
     #: Sent as request headers on the predict call (from the endpoint page).
     quickml_org_id: str | None = os.getenv("KAVACH_QUICKML_ORG_ID")
     quickml_environment: str = os.getenv("KAVACH_QUICKML_ENVIRONMENT", "Development")
-    #: QuickML LLM Serving endpoint URL (Qwen 2.5) for phrasing computed driver
-    #: facts in plain English. Optional polish only — never originates numbers.
+    #: QuickML LLM Serving endpoint URL (GLM chat, ``/glm/chat``) for phrasing
+    #: computed driver facts in plain English. Optional polish only — never
+    #: originates numbers. Unset → the deterministic template sentence is used.
     quickml_llm_endpoint: str | None = os.getenv("KAVACH_QUICKML_LLM_ENDPOINT")
-    #: OAuth token for the LLM Serving endpoint (short-lived; via a Catalyst
-    #: connector in production). Unset → the deterministic template sentence is
-    #: used instead of the Qwen-polished one.
+    #: OAuth token for the LLM endpoint. Unset → the minted self-client access
+    #: token is reused (same QuickML.deployment.READ scope).
     quickml_llm_token: str | None = os.getenv("KAVACH_QUICKML_LLM_TOKEN")
-    #: Human-readable model id recorded as provenance model_version for the LLM.
-    quickml_llm_model: str = os.getenv("KAVACH_QUICKML_LLM_MODEL", "qwen-2.5-14b-instruct")
+    #: The API ``model`` id sent in the chat request (e.g. the deployed GLM id
+    #: ``crm-di-glm47b_30b_it``). Unset → the LLM polish is skipped (template).
+    quickml_llm_model_id: str | None = os.getenv("KAVACH_QUICKML_LLM_MODEL_ID")
+    #: Friendly model name shown to users as provenance (summary_source /
+    #: model_version) — kept separate from the cryptic API id above.
+    quickml_llm_model: str = os.getenv("KAVACH_QUICKML_LLM_MODEL", "GLM-4.7")
 
 
 settings = Settings()

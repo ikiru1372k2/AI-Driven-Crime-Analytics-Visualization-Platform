@@ -56,6 +56,7 @@ def _default_client() -> QuickMLClient:
         environment=settings.quickml_environment,
         llm_endpoint=settings.quickml_llm_endpoint,
         llm_token=settings.quickml_llm_token,
+        llm_model=settings.quickml_llm_model_id,
     )
 
 

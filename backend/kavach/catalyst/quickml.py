@@ -20,11 +20,12 @@ authenticated differently and matter differently:
       "Catalyst headers are empty" on anonymous requests, so it is only a
       fallback, not the primary path.
 
-2. **LLM Serving** (`llm`) — Qwen 2.5 via an OAuth-secured endpoint URL. It only
-   rephrases driver facts the engine already computed; it never originates a
-   number, and the engine re-checks its output for invented numbers before
-   trusting it. Uses the same self-client access token when no static token is
-   configured.
+2. **LLM Serving** (`llm`) — a GLM chat model (OpenAI-style ``/glm/chat``
+   endpoint) via the same OAuth token. It only rephrases driver facts the engine
+   already computed; it never originates a number, and the engine re-checks its
+   output for invented numbers before trusting it. The model's "thinking" trace
+   is disabled so it returns only the sentence (otherwise the chain-of-thought
+   blows the token budget and trips the number fence).
 
 Unavailability is normal (unconfigured, not reachable, transient failure). Every
 failure raises ``QuickMLUnavailable`` and the caller degrades to an honest
@@ -47,7 +48,11 @@ logger = logging.getLogger(__name__)
 #: LLM sampling: low temperature — we want faithful rephrasing, not creativity.
 _LLM_TEMPERATURE = 0.2
 _LLM_MAX_TOKENS = 160
-_LLM_TIMEOUT_S = 12
+#: A 14B/30B model can be slow on a cold endpoint; give it room but stay within a
+#: web request's patience (only High-risk districts are polished, sequentially).
+_LLM_TIMEOUT_S = 20
+#: Keep the model terse and answer-only (belt-and-braces with enable_thinking).
+_LLM_SYSTEM_PROMPT = "Output only the requested sentence, nothing else."
 _PREDICT_TIMEOUT_S = 15
 _TOKEN_TIMEOUT_S = 12
 #: Refresh the access token this many seconds before it actually expires.
@@ -91,6 +96,7 @@ class QuickMLClient:
     environment: str | None = None
     llm_endpoint: str | None = None
     llm_token: str | None = None
+    llm_model: str | None = None
     _timeout: int = field(default=_PREDICT_TIMEOUT_S, repr=False)
 
     # --- OAuth (self-client refresh token -> access token) ----------------
@@ -222,38 +228,54 @@ class QuickMLClient:
             return self._predict_rest(rows)
         return self._predict_sdk(rows)
 
-    # --- LLM phrasing (OAuth endpoint URL) --------------------------------
+    # --- LLM phrasing (OpenAI-style GLM chat endpoint) --------------------
     def llm(self, prompt: str) -> str:
-        """Rephrase driver facts in plain English via Qwen (LLM Serving).
+        """Rephrase driver facts in plain English via the GLM chat endpoint.
 
-        Optional polish only. Uses the static ``llm_token`` if set, otherwise the
-        minted self-client access token. Raises QuickMLUnavailable when
-        unconfigured or on any failure; the engine then keeps its template.
+        Optional polish only. The endpoint is an OpenAI-style chat API
+        (``/glm/chat``): we send the prompt as a user message, disable the
+        model's "thinking" trace (so it returns the sentence, not a reasoning
+        dump), and read the ``response`` field. Uses the static ``llm_token`` if
+        set, otherwise the minted self-client access token. Raises
+        QuickMLUnavailable when unconfigured or on any failure; the engine then
+        keeps its deterministic template.
         """
         if not self.llm_endpoint:
             raise QuickMLUnavailable("llm endpoint not configured")
+        if not self.llm_model:
+            raise QuickMLUnavailable("llm model id not configured")
         token = self.llm_token or (self._access_token() if self._oauth_configured() else None)
         if not token:
             raise QuickMLUnavailable("llm token not configured")
         body = json.dumps(
             {
-                "prompt": prompt,
+                "model": self.llm_model,
+                "messages": [
+                    {"role": "system", "content": _LLM_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
                 "temperature": _LLM_TEMPERATURE,
                 "max_tokens": _LLM_MAX_TOKENS,
+                "stream": False,
+                # GLM 4.7 emits a chain-of-thought by default; turn it off so the
+                # reply is just the sentence (keeps it inside the token budget and
+                # free of stray numbers that would trip the engine's fence).
+                "chat_template_kwargs": {"enable_thinking": False},
             }
         ).encode("utf-8")
-        req = urllib.request.Request(
-            self.llm_endpoint,
-            data=body,
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Zoho-oauthtoken {token}",
-            },
-        )
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Zoho-oauthtoken {token}",
+        }
+        if self.org_id:
+            headers["CATALYST-ORG"] = str(self.org_id)
+        req = urllib.request.Request(self.llm_endpoint, data=body, method="POST", headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=_LLM_TIMEOUT_S) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            raise QuickMLUnavailable(f"llm HTTP {exc.code}: {detail}") from exc
         except (urllib.error.URLError, ValueError, TimeoutError) as exc:
             raise QuickMLUnavailable(f"llm call failed: {type(exc).__name__}: {exc}") from exc
         text = _llm_text(payload)
