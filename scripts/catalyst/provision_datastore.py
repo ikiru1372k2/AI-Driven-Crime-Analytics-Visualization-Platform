@@ -52,6 +52,12 @@ TYPE_MAP = {
     "NVARCHAR(MAX)": "text",
 }
 
+#: Columns documented as INT but carrying categorical CHAR codes rather than
+#: numeric ids — the matrix annotates GenderID with "values like m/f/t" /
+#: "M/F/T". Stored as varchar so the real data fits (see datastore-type-mapping
+#: deviation log); INT→bigint would reject "M"/"F".
+COLUMN_TYPE_OVERRIDES = {"GenderID": "varchar"}
+
 #: Catalyst system columns present on every table — excluded from parity.
 SYSTEM_COLUMNS = {"ROWID", "CREATORID", "CREATEDTIME", "MODIFIEDTIME"}
 
@@ -182,7 +188,8 @@ def build_plan(
                 )
             if er_type not in TYPE_MAP:
                 raise SystemExit(f"unmapped ER type {er_type!r} for {table}.{col}")
-            columns.append(ColumnSpec(col, TYPE_MAP[er_type]))
+            catalyst_type = COLUMN_TYPE_OVERRIDES.get(col, TYPE_MAP[er_type])
+            columns.append(ColumnSpec(col, catalyst_type))
         plan.append(TableSpec(table, tuple(columns), is_derived=False))
     for table, cols in DERIVED_TABLES.items():
         plan.append(
@@ -290,12 +297,17 @@ class CliSessionClient(DataStoreAdmin):
         aborting a 30-table run half-way.
         """
         cmd = ["node", self.bridge, method, f"/baas/v1/project/{self.project_id}{path}"]
+        stdin_data: str | None = None
         if body is not None:
-            cmd.append(json.dumps(body))
+            # Pass the body on stdin ("-"), not argv: a 200-row insert chunk can
+            # exceed the OS command-line length limit (Windows WinError 206).
+            cmd.append("-")
+            stdin_data = json.dumps(body)
         last = ""
         for attempt in range(RETRY_ATTEMPTS):
             proc = subprocess.run(  # noqa: S603 — fixed argv, no shell
-                cmd, capture_output=True, text=True, cwd=self.app_dir, timeout=180
+                cmd, input=stdin_data, capture_output=True, text=True,
+                cwd=self.app_dir, timeout=180,
             )
             try:
                 payload = json.loads(proc.stdout.strip().splitlines()[-1])
