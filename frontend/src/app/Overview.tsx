@@ -5,9 +5,12 @@
  * largest spatial hotspots as a bridge into the map view.
  */
 import { useEffect, useState } from "react";
-import { fetchOverview, type Overview as OverviewData, type Severity, type TrendAlert } from "../lib/api";
+import { fetchOverview, type Severity, type TrendAlert } from "../lib/api";
 import { fetchDecisions, postDecision } from "../lib/evidenceApi";
+import { useCachedQuery } from "../lib/queryCache";
 import { Sparkline } from "./Sparkline";
+
+const REVALIDATE_MS = 5 * 60_000; // background reload cadence (backend TTL ~5 min)
 
 const SEV_COLOR: Record<string, string> = {
   critical: "#d03b3b",
@@ -20,12 +23,15 @@ function sevColor(s: Severity): string {
 }
 
 export function Overview({ onOpenMap }: { onOpenMap: () => void }) {
-  const [data, setData] = useState<OverviewData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Cached at module scope + a silent 5-min background reload, so revisiting the
+  // Trends tab paints instantly instead of re-fetching (PERF-001). Refresh forces
+  // a live reload in the background — the UI updates in place when data changes.
+  const { data, error, refreshing, refresh } = useCachedQuery("overview", fetchOverview, {
+    refetchIntervalMs: REVALIDATE_MS,
+  });
   const [acked, setAcked] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    fetchOverview().then(setData).catch((e) => setError(String(e)));
     // loop closure (design review P0): acknowledged state survives reload
     fetchDecisions()
       .then((d) =>
@@ -40,7 +46,7 @@ export function Overview({ onOpenMap }: { onOpenMap: () => void }) {
       .catch(() => {});
   }, []);
 
-  if (error) return <div className="overview"><div className="empty">Backend unreachable — {error}</div></div>;
+  if (error) return <div className="overview"><div className="empty">Backend unreachable — {String(error)}</div></div>;
   if (!data) return <div className="overview"><div className="empty">Loading intelligence summary…</div></div>;
 
   const alertKey = (a: TrendAlert) => `${a.station_id}-${a.subhead_id}`;
@@ -68,6 +74,11 @@ export function Overview({ onOpenMap }: { onOpenMap: () => void }) {
         <div>
           <h2>State Intelligence Overview</h2>
           <p className="sub">What requires attention now · {data.date_range.from} → {data.date_range.to}</p>
+        </div>
+        <div className="hdr-actions">
+          <button className="refresh-btn" onClick={refresh} disabled={refreshing}>
+            ↻ {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       </div>
 

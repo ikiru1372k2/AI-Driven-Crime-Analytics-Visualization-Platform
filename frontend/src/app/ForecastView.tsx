@@ -20,14 +20,21 @@ import { Loading } from "./Loading";
 import { ForecastHero } from "./ForecastHero";
 import { RiskLadder, type LadderFilter } from "./RiskLadder";
 
+const REVALIDATE_MS = 5 * 60_000; // background reload cadence (backend TTL ~5 min)
+
 interface Props {
   onOpenCase: (caseId: string) => void;
 }
 
 export function ForecastView({ onOpenCase }: Props) {
   // Cached at module scope so re-entering the tab reuses the last forecast
-  // instead of re-calling the live QuickML path (PERF-001).
-  const { data, error } = useCachedQuery("risk:30", () => fetchRisk(30));
+  // instead of re-calling the live QuickML path (PERF-001). Reloads silently on
+  // an interval; the Refresh button forces a live, blocking reload.
+  const { data, error, refreshing, refresh } = useCachedQuery(
+    "risk:30",
+    () => fetchRisk(30),
+    { refetchIntervalMs: REVALIDATE_MS },
+  );
   const [filter, setFilter] = useState<LadderFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -60,7 +67,12 @@ export function ForecastView({ onOpenCase }: Props) {
               Where crime is expected to rise over the next {data.window_days} days.
             </p>
           </div>
-          {env && <span className="badge">{env.classification_label}</span>}
+          <div className="hdr-actions">
+            {env && <span className="badge">{env.classification_label}</span>}
+            <button className="refresh-btn" onClick={refresh} disabled={refreshing}>
+              ↻ {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
         </header>
         <div className="fc-unavailable">
           <strong>Forecast unavailable — prediction service not configured.</strong>
@@ -101,11 +113,16 @@ export function ForecastView({ onOpenCase }: Props) {
             not a certainty.
           </p>
         </div>
-        {env && (
-          <span className="badge" title={`Model: ${modelVersion}`}>
-            {env.classification_label}
-          </span>
-        )}
+        <div className="hdr-actions">
+          {env && (
+            <span className="badge" title={`Model: ${modelVersion}`}>
+              {env.classification_label}
+            </span>
+          )}
+          <button className="refresh-btn" onClick={refresh} disabled={refreshing}>
+            ↻ {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </header>
 
       <ForecastHero districts={data.districts} windowDays={data.window_days} onFocus={focus} />

@@ -384,6 +384,40 @@ select:focus-visible {
   }
 }
 
+/* ---- refresh: cached tabs ---- */
+/* Right-aligned header cluster: a tab's classification badge + Refresh. */
+.hdr-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: none;
+}
+/* Refresh button — a quiet ghost control that sits beside a tab's badge. It
+   reloads in the background (no blocking modal); the UI updates in place when
+   the data actually changes. */
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  color: var(--ink-2);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.refresh-btn:hover {
+  color: var(--ink);
+  border-color: var(--accent-soft);
+}
+.refresh-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* ---- map ---- */
 .map-col {
   position: relative;
@@ -594,6 +628,12 @@ select:focus-visible {
   overflow-y: auto;
   padding: 1.25rem 1.5rem 2.5rem;
   background: var(--page);
+}
+.ov-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
 }
 .ov-head h2 {
   margin: 0;

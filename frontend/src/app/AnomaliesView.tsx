@@ -22,14 +22,21 @@ import { useCachedQuery } from "../lib/queryCache";
 import { Loading } from "./Loading";
 import { AnomalyList, type FlagFilter } from "./AnomalyList";
 
+const REVALIDATE_MS = 5 * 60_000; // background reload cadence (backend TTL ~5 min)
+
 interface Props {
   onOpenCase: (caseId: string) => void;
 }
 
 export function AnomaliesView({ onOpenCase }: Props) {
   // Cached at module scope: switching tabs and back reuses this instantly
-  // instead of re-scanning (PERF-001).
-  const { data, error } = useCachedQuery("anomalies:30", () => fetchAnomalies(30));
+  // instead of re-scanning (PERF-001). Reloads silently on an interval; the
+  // Refresh button forces a live, blocking reload.
+  const { data, error, refreshing, refresh } = useCachedQuery(
+    "anomalies:30",
+    () => fetchAnomalies(30),
+    { refetchIntervalMs: REVALIDATE_MS },
+  );
   const [filter, setFilter] = useState<FlagFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -71,11 +78,16 @@ export function AnomaliesView({ onOpenCase }: Props) {
             verify, and a “✓ ML” badge where an unsupervised model agrees it’s an outlier.
           </p>
         </div>
-        {env && (
-          <span className="badge" title={`Model: ${modelVersion}`}>
-            {env.classification_label}
-          </span>
-        )}
+        <div className="hdr-actions">
+          {env && (
+            <span className="badge" title={`Model: ${modelVersion}`}>
+              {env.classification_label}
+            </span>
+          )}
+          <button className="refresh-btn" onClick={refresh} disabled={refreshing}>
+            ↻ {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </header>
 
       {flags.length === 0 ? (
