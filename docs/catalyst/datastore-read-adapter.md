@@ -30,13 +30,20 @@ build, the engines) works unchanged; only the *source* of the rows changes.
 ## Required scope (a separate token from QuickML)
 
 The QuickML forecast token is scoped `QuickML.deployment.READ` and **cannot** read
-the Data Store. Reads need a refresh token scoped **`ZohoCatalyst.tables.rows.READ`**,
-minted as its own console step:
+the Data Store. The adapter reads via ZCQL, whose execute-query API needs the scope
+**`ZohoCatalyst.zcql.CREATE`** — named `CREATE` even for `SELECT`, because it
+executes a query resource. (`ZohoCatalyst.tables.rows.READ` only authorizes the
+direct row-GET endpoint, which we don't use because it can't paginate.) Mint it as
+its own console step:
 
-1. Zoho API console → your self-client → generate a code for scope
-   `ZohoCatalyst.tables.rows.READ` (India DC).
-2. Exchange the code for a **refresh token** (`grant_type=authorization_code`
-   against `{accounts_url}/oauth/v2/token`).
+1. Zoho API console (`https://api-console.zoho.in`, India DC) → your Self Client →
+   **Generate Code** for scope `ZohoCatalyst.zcql.CREATE`, duration ~10 min.
+2. Exchange the code (single-use, short-lived) for a **refresh token**:
+   ```bash
+   curl -s -X POST "https://accounts.zoho.in/oauth/v2/token" \
+     -d grant_type=authorization_code -d client_id=... -d client_secret=... -d code=...
+   ```
+   Keep the `refresh_token` from the response (not the `access_token`).
 3. Put it in the git-ignored `deploy.env` as `KAVACH_DATASTORE_REFRESH_TOKEN`
    (or let it fall back to `ZOHO_REFRESH_TOKEN` if that token carries the scope).
 
@@ -47,7 +54,7 @@ All read from the environment (see `backend/kavach/config.py`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `KAVACH_DATA_SOURCE` | `csv` | `csv` (bundled) or `datastore` (live). |
-| `KAVACH_DATASTORE_REFRESH_TOKEN` | — | `ZohoCatalyst.tables.rows.READ` refresh token; falls back to `ZOHO_REFRESH_TOKEN`. |
+| `KAVACH_DATASTORE_REFRESH_TOKEN` | — | `ZohoCatalyst.zcql.CREATE` refresh token; falls back to `ZOHO_REFRESH_TOKEN`. |
 | `KAVACH_DATASTORE_API_BASE` | `https://api.catalyst.zoho.in` | Catalyst DC base URL. |
 | `KAVACH_DATASTORE_TTL` | `300` | Per-table cache lifetime, seconds. `0` disables caching. |
 
