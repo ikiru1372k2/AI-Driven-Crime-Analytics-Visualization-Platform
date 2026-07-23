@@ -47,6 +47,13 @@ _MAX_LLM_POLISH = 6
 def _default_client() -> QuickMLClient:
     return QuickMLClient(
         risk_endpoint=settings.quickml_risk_endpoint,
+        risk_url=settings.quickml_risk_url,
+        client_id=settings.zoho_client_id,
+        client_secret=settings.zoho_client_secret,
+        refresh_token=settings.zoho_refresh_token,
+        accounts_url=settings.zoho_accounts_url,
+        org_id=settings.quickml_org_id,
+        environment=settings.quickml_environment,
         llm_endpoint=settings.quickml_llm_endpoint,
         llm_token=settings.quickml_llm_token,
     )
@@ -113,17 +120,29 @@ def forecast_area_risk(*, window_days: int = 30, quickml: QuickMLClient | None =
 
 
 def _extract_prediction(result: dict) -> float | None:
-    """Pull the numeric forecast out of a QuickML predict result, tolerantly."""
+    """Pull the numeric forecast out of a QuickML predict result, tolerantly.
+
+    QuickML regression returns the value in a single-element list
+    (``{"result": [39.2], "status": "success"}``), so every candidate is passed
+    through :func:`_first` to unwrap that before coercing to a number.
+    """
     if not isinstance(result, dict):
-        return _num(result)
+        return _num(_first(result))
     for key in (features.TARGET_COLUMN, "prediction", "predicted_value", "output", "result"):
         if key in result:
-            val = _num(result[key])
+            val = _num(_first(result[key]))
             if val is not None:
                 return val
     # last resort: the single numeric value in the payload
-    nums = [v for v in (_num(x) for x in result.values()) if v is not None]
+    nums = [v for v in (_num(_first(x)) for x in result.values()) if v is not None]
     return nums[0] if len(nums) == 1 else None
+
+
+def _first(x):
+    """Unwrap a one-element list/tuple to its element; pass anything else through."""
+    if isinstance(x, (list, tuple)) and len(x) == 1:
+        return x[0]
+    return x
 
 
 def _num(x) -> float | None:

@@ -16,11 +16,16 @@ Usage (from repo root):
 
 Then, in the Catalyst console: QuickML -> new pipeline -> upload this CSV ->
 target column = target_next_count -> train a regression model -> publish an
-endpoint -> copy its endpoint key into KAVACH_QUICKML_RISK_ENDPOINT. The feature
-columns (drop district_id/district_name, which are identifiers) are:
+endpoint -> copy its endpoint key into KAVACH_QUICKML_RISK_ENDPOINT.
+
+The CSV is deliberately ALL-NUMERIC: only the model's feature columns plus the
+target. District identifiers are *not* written — QuickML's pipeline rejects a
+training set with any non-numeric column ("Previous stage result contains
+non-numeric columns"), and the identifiers are not features anyway. The columns
+are:
 
     recent_count, prior_count, prior2_count, velocity, rolling_mean_3,
-    trend_slope, month
+    trend_slope, month, target_next_count
 
 All data is SYNTHETIC (ADR-011).
 """
@@ -32,7 +37,7 @@ import csv
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = ROOT / "data" / "risk_train.csv"
+DEFAULT_OUT = ROOT / "data" / "risk_train_model.csv"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -47,12 +52,14 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         raise SystemExit("no training rows — generate the dataset first")
 
-    # feature columns first (what the model trains on), then the target, then ids
-    header = [*features.FEATURE_COLUMNS, features.TARGET_COLUMN, "district_id", "district_name"]
+    # ALL-NUMERIC training table: feature columns then the target, nothing else.
+    # District identifiers are dropped — they are not features, and any
+    # non-numeric column makes QuickML's pipeline reject the training set.
+    header = [*features.FEATURE_COLUMNS, features.TARGET_COLUMN]
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=header)
+        writer = csv.DictWriter(fh, fieldnames=header, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from kavach.analytics.risk import MODEL_VERSION, features, forecast_area_risk
-from kavach.analytics.risk.engine import _numbers_safe
+from kavach.analytics.risk.engine import _extract_prediction, _numbers_safe
 from kavach.api import data
 from kavach.api.envelope import envelope
 from kavach.catalyst.quickml import QuickMLUnavailable
@@ -129,6 +129,14 @@ def test_qwen_polish_is_fenced_against_invented_numbers(planted):
     for d in polished:
         assert d["risk_level"] == "High"
         assert d["summary_source"] == settings.quickml_llm_model
+
+
+def test_extract_prediction_handles_quickml_list_shape():
+    """QuickML regression returns the value in a single-element list."""
+    assert _extract_prediction({"result": [39.23], "status": "success"}) == pytest.approx(39.23)
+    assert _extract_prediction({"target_next_count": [12]}) == 12
+    assert _extract_prediction({"prediction": 7}) == 7  # scalar still works
+    assert _extract_prediction({"status": "success"}) is None  # no number -> honest None
 
 
 def test_numbers_safe_guard():
