@@ -1099,21 +1099,24 @@ select:focus-visible {
   padding: 1.25rem 1.5rem 2.5rem;
   background: var(--page);
 }
+.idx-head {
+  text-align: center;
+}
 .idx-head h2 {
   margin: 0;
   font-size: 1.25rem;
 }
 .idx-head .sub {
-  margin: 0.2rem 0 0;
+  margin: 0.2rem auto 0;
   color: var(--muted);
   font-size: 0.8rem;
   max-width: 68ch;
 }
-/* wide, Google-style search bar — the tab's signature element */
+/* wide, Google-style search bar — the tab's signature element, centered */
 .id-search {
   display: flex;
   gap: 0.5rem;
-  margin: 1rem 0 1.25rem;
+  margin: 2.25rem auto 2.75rem;
   max-width: 720px;
 }
 .id-search input {
@@ -1148,6 +1151,7 @@ select:focus-visible {
 /* ranked accused list */
 .accused-wrap {
   max-width: 900px;
+  margin: 0 auto;
 }
 .accused-list {
   display: flex;
@@ -1241,6 +1245,7 @@ select:focus-visible {
 /* shared match list (row "find similar" + top search) */
 .match-view {
   max-width: 900px;
+  margin: 0 auto;
 }
 .match-head {
   display: flex;
@@ -1589,6 +1594,18 @@ select:focus-visible {
 .nav-btn:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
+}
+/* secondary action in the same stack — outlined, not filled */
+.nav-btn.ghost {
+  margin-top: 0.5rem;
+  background: transparent;
+  color: var(--series-1);
+  border: 1px solid var(--series-1);
+}
+.nav-btn.ghost:hover {
+  background: var(--series-1);
+  color: #fff;
+  filter: none;
 }
 /* ============================================================
    Command shell nav (design review 1f) — 9-module story visible

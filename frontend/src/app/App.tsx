@@ -11,6 +11,9 @@ import {
   fetchDistricts,
   fetchHotspots,
   fetchMeta,
+  fetchOverview,
+  fetchRankedAccused,
+  fetchRisk,
   fetchTrends,
   type CaseRecord,
   type DistrictStat,
@@ -19,18 +22,19 @@ import {
   type Meta,
   type TrendAlert,
 } from "../lib/api";
+import { prefetchQuery } from "../lib/queryCache";
 import { MapView } from "./MapView";
 import { Sidebar } from "./Sidebar";
 import { HotspotDetail } from "./HotspotDetail";
 import { Overview } from "./Overview";
-import { IdentityExplorer } from "./IdentityExplorer";
+import { IdentityExplorer, type IdentitySearchSeed } from "./IdentityExplorer";
 import { GraphView, type GraphSeed } from "./GraphView";
 import { MoView } from "./MoView";
 import { ForecastView } from "./ForecastView";
 import { AnomaliesView } from "./AnomaliesView";
 import { CommandNav, type ModuleView } from "./CommandNav";
 import { TimeScrubber } from "./TimeScrubber";
-import type { NodeType } from "../lib/graphApi";
+import type { NodeType, PersonDetail } from "../lib/graphApi";
 import { readHashState, writeHashState } from "../lib/urlstate";
 import { initialTheme, applyTheme, type Theme } from "../lib/theme";
 import "./styles.css";
@@ -62,6 +66,7 @@ export function App() {
   const [flagCount, setFlagCount] = useState(0);
   const [selectedRank, setSelectedRank] = useState<number | null>(initial.hotspot);
   const [graphSeed, setGraphSeed] = useState<GraphSeed | null>(parseSeed(initial.graphSeed));
+  const [identitySeed, setIdentitySeed] = useState<IdentitySearchSeed | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +75,17 @@ export function App() {
     fetchMeta().then(setMeta).catch((e) => setError(String(e)));
     fetchDistricts().then((d) => setDistrictStats(d.districts)).catch(() => {});
     fetchAnomalies().then((a) => setFlagCount(a.flag_count)).catch(() => {});
+  }, []);
+
+  // Warm the heavy tabs in the background at startup (PERF-001) so switching to
+  // Overview/Anomalies/Area-Risk/Identities paints from cache instead of showing
+  // a spinner. Same keys+fetchers as each tab's useCachedQuery, so the warm
+  // entry is reused; fire-and-forget, deduped, and skipped if already fresh.
+  useEffect(() => {
+    prefetchQuery("overview", fetchOverview);
+    prefetchQuery("anomalies:30", () => fetchAnomalies(30));
+    prefetchQuery("risk:30", () => fetchRisk(30));
+    prefetchQuery("accused:ranked:0", () => fetchRankedAccused(15, 0)); // page 1, PAGE=15
   }, []);
 
   // (re)query cases + hotspots + active alerts whenever filters change
@@ -113,6 +129,12 @@ export function App() {
     setSelectedRank(h ? h.rank : null);
   }, []);
 
+  // "See similar people" in the graph → open Identities and run that person's search.
+  const seeSimilarPerson = useCallback((p: PersonDetail) => {
+    setIdentitySeed({ name: p.name ?? "", age: p.age, sex: p.gender });
+    setView("identities");
+  }, []);
+
   // stations with an ACTIVE trend alert — the map pulses only these (never otherwise)
   const alertStationIds = new Set(
     alerts.map((a) => a.station_id).filter((s): s is string => s != null),
@@ -145,7 +167,12 @@ export function App() {
 
       {view === "overview" && <Overview onOpenMap={() => setView("map")} />}
 
-      {view === "identities" && <IdentityExplorer />}
+      {view === "identities" && (
+        <IdentityExplorer
+          initialSearch={identitySeed}
+          onSearchConsumed={() => setIdentitySeed(null)}
+        />
+      )}
 
       {view === "mo" && <MoView />}
 
@@ -167,7 +194,14 @@ export function App() {
         />
       )}
 
-      {view === "graph" && <GraphView seed={graphSeed} onSeed={setGraphSeed} theme={theme} />}
+      {view === "graph" && (
+        <GraphView
+          seed={graphSeed}
+          onSeed={setGraphSeed}
+          theme={theme}
+          onSeeSimilar={seeSimilarPerson}
+        />
+      )}
 
       {view === "map" && (
       <div className="body">

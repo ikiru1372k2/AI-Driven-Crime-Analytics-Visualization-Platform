@@ -168,6 +168,23 @@ export function useCachedQuery<T>(
   };
 }
 
+/**
+ * Warm a cache key WITHOUT subscribing a component — call at app start so a later
+ * tab switch paints from cache instead of showing its spinner. Fire-and-forget:
+ * reuses an in-flight fetch if one is already running (dedupe) and is a no-op
+ * when the entry is still fresh. Must use the SAME key + fetcher as the tab's
+ * `useCachedQuery` for the warm entry to be reused.
+ */
+export function prefetchQuery<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  staleMs: number = DEFAULT_STALE_MS,
+): void {
+  const e = entryFor<T>(key);
+  const isStale = e.ts === 0 || Date.now() - e.ts > staleMs;
+  if (isStale && !e.promise) void revalidate(key, fetcher);
+}
+
 /** Drop one key (or everything) — e.g. a manual refresh control. */
 export function invalidateQuery(key?: string): void {
   if (key === undefined) {

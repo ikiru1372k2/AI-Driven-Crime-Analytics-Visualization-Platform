@@ -81,5 +81,15 @@ def test_similar_sex_filter(client):
     assert all(m["gender"] == other for m in r.json()["matches"])
 
 
+def test_similar_name_only_is_partial(client):
+    """A name-only query is the top search box: a name FRAGMENT still matches."""
+    subject = client.get("/api/accused/ranked").json()["accused"][0]
+    token = next((t for t in subject["name"].split() if len(t) >= 4), subject["name"])
+    frag = token[:3]
+    body = client.get("/api/persons/similar", params={"name": frag}).json()
+    assert body["match_count"] >= 1
+    assert any(m["name"] == subject["name"] for m in body["matches"])
+
+
 def test_similar_requires_a_name(client):
     assert client.get("/api/persons/similar").status_code == 422

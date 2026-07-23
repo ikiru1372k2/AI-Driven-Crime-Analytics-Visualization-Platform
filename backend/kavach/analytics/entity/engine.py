@@ -88,6 +88,37 @@ def _name_sim(ta: list[str], tb: list[str]) -> float:
     return 0.5 * given + 0.5 * surname
 
 
+def _name_partial(query: str, cand: list[str]) -> float:
+    """Loose search-box match: does the typed text appear in the candidate name?
+
+    Unlike ``_name_sim`` (which anchors on the given name to resolve the SAME
+    person), this powers the top search box — any typed fragment that prefixes or
+    sits inside any name token is a hit, so "naik", "haris" or "kumar" all find
+    people regardless of where the fragment falls. Returns a coverage score in
+    [0, 1]; 0 means no hit (every typed token must land somewhere).
+    """
+    q = re.sub(r"[^a-z ]", " ", (query or "").lower()).split()
+    if not q or not cand:
+        return 0.0
+    scores = []
+    for qt in q:
+        best = 0.0
+        for ct in cand:
+            if ct == qt:
+                m = 1.0
+            elif ct.startswith(qt):
+                m = 0.9  # prefix: "haris" -> "harish"
+            elif qt in ct:
+                m = 0.75  # substring: "aris" -> "harish"
+            else:
+                m = SequenceMatcher(None, qt, ct).ratio()
+            best = max(best, m)
+        if best < 0.6:
+            return 0.0  # this fragment matches nothing -> not a hit
+        scores.append(best)
+    return sum(scores) / len(scores)
+
+
 def _age_score(a: int | None, b: int | None) -> tuple[float, int | None]:
     if a is None or b is None:
         return 0.5, None
@@ -275,6 +306,7 @@ def find_similar(
     *,
     limit: int = 50,
     min_name_sim: float = 0.5,
+    partial: bool = False,
 ) -> list[dict]:
     """People whose attributes resemble one query person — an ON-DEMAND search.
 
@@ -287,7 +319,10 @@ def find_similar(
 
     Matching (ADR-003, attributes only):
       - **sex** is a hard filter when given (opposite gender never matches);
-      - **name** must clear ``min_name_sim`` (unrelated names are dropped);
+      - **name** — with ``partial`` (the top search box) any typed fragment that
+        prefixes or sits inside a name token is a hit (``_name_partial``); without
+        it (a row's "find similar") the stricter same-person scorer ``_name_sim``
+        applies and must clear ``min_name_sim``;
       - **age**, when given, is a band: a gap over ``_MAX_AGE_GAP`` is a hard
         contradiction and excluded; otherwise it blends into the score. With no
         age (the name-only top search) the score is the name similarity alone.
@@ -299,16 +334,25 @@ def find_similar(
     for person in data.ranked_accused():
         if q_gender and person["gender"] and person["gender"] != q_gender:
             continue  # sex is a hard filter
-        name_sim = _name_sim(q_tokens, _tokens(person["name"]))
-        if name_sim < min_name_sim:
-            continue
+        cand_tokens = _tokens(person["name"])
+        if partial:
+            name_sim = _name_partial(name, cand_tokens)
+            if name_sim <= 0:
+                continue  # typed fragment matches nothing
+        else:
+            name_sim = _name_sim(q_tokens, cand_tokens)
+            if name_sim < min_name_sim:
+                continue
 
         contributing, contradictory = [], []
-        contributing.append(
-            f"name: {name!r} ~ {person['name']!r} ({name_sim:.2f})"
-            if name_sim >= 0.8
-            else f"name partially matches ({name_sim:.2f})"
-        )
+        if partial:
+            contributing.append(f"name matches {name!r} ({name_sim:.2f})")
+        else:
+            contributing.append(
+                f"name: {name!r} ~ {person['name']!r} ({name_sim:.2f})"
+                if name_sim >= 0.8
+                else f"name partially matches ({name_sim:.2f})"
+            )
         if q_gender and person["gender"]:
             contributing.append(f"same sex ({person['gender']})")
 

@@ -28,6 +28,8 @@ interface Props {
   onNavigateCase: (caseId: string) => void;
   /** Redraw the graph centered on this person, one node per case. */
   onShowPersonCases: (p: PersonDetail) => void;
+  /** Open the Identities tab and search for people similar to this one. */
+  onSeeSimilar: (p: PersonDetail) => void;
 }
 
 /** "Name, 34" — a person as we know them on the FIR (age omitted if unknown). */
@@ -51,6 +53,7 @@ export function GraphDetailPanel({
   onNavigate,
   onNavigateCase,
   onShowPersonCases,
+  onSeeSimilar,
 }: Props) {
   if (person) {
     const roleType = person.role === "accused" ? "ACCUSED_RECORD" : "VICTIM_RECORD";
@@ -88,6 +91,11 @@ export function GraphDetailPanel({
         {person.case_count > 1 && (
           <button className="nav-btn" onClick={() => onShowPersonCases(person)}>
             Show their {person.case_count} cases →
+          </button>
+        )}
+        {person.role === "accused" && (
+          <button className="nav-btn ghost" onClick={() => onSeeSimilar(person)}>
+            See similar people →
           </button>
         )}
         <p className="muted small">
