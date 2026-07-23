@@ -16,7 +16,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--seed", type=int, default=20260714)
     p.add_argument("--out", default=str(ROOT / "data/synthetic"))
-    p.add_argument("--background-cases", type=int, default=2000)
+    p.add_argument("--background-cases", type=int, default=16000)
     args = p.parse_args()
     gen = generate_dataset(args.out, ROOT / "docs/schema/schema-manifest.json",
                            seed=args.seed, background_cases=args.background_cases)

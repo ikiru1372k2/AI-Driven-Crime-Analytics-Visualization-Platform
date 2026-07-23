@@ -17,11 +17,8 @@ from kavach.datagen import narratives
 from kavach.datagen.lookups import build_lookups
 
 _SUBHEAD_TO_HEAD = {s: h for s, h, _ in cfg.CRIME_SUBHEADS}
-_HEINOUS_SUBHEADS = {31, 33, 71}
-#: relative weights for background sub-head mix
-_BG_WEIGHTS = [(31, 1), (32, 6), (33, 1), (71, 4), (72, 10), (73, 5), (111, 4), (112, 3)]
-#: night-weighted hour profiles per sub-head (used for background realism)
-_NIGHT_SUBHEADS = {71, 73}
+#: gravity=Heinous sub-heads (cosmetic GravityOffenceID; not an oracle input).
+_HEINOUS_SUBHEADS = {31, 33, 34, 36, 71, 76, 131, 133, 134, 231}
 
 
 def _offset_coords(rng: Random, lat: float, lon: float, max_m: float) -> tuple[float, float]:
@@ -183,9 +180,10 @@ class DatasetGenerator:
         rng, h, sp = self.rng, cfg.HOTSPOT, cfg.TREND_SPIKE
         unit = h["unit_id"]
         end = cfg.ANCHOR
+        weeks = cfg.HISTORY_DAYS // 7  # baseline spans the whole history span
         occurrences: list[datetime] = []
-        for week in range(52):  # baseline 4/week across the year
-            wk_start = end - timedelta(days=(52 - week) * 7)
+        for week in range(weeks):  # baseline 4/week across the history
+            wk_start = end - timedelta(days=(weeks - week) * 7)
             for _ in range(sp["baseline_weekly_mean"]):
                 occurrences.append(wk_start + timedelta(
                     minutes=rng.randint(0, 7 * 24 * 60 - 1)))
@@ -226,17 +224,53 @@ class DatasetGenerator:
         }
 
     def _gen_background(self) -> None:
+        """Background FIRs with geographic, seasonal and diurnal structure.
+
+        A case is drawn as district (by volume) -> station -> offence (by that
+        district's mix) -> a date weighted by month/day-of-week/recency and an
+        hour weighted by the offence's diurnal profile. All draws are off the
+        single seeded rng, so output stays byte-identical per seed.
+        """
         rng = self.rng
-        stations = [s for s in self.ctx["stations"] if s[0] != cfg.HOTSPOT["unit_id"]]
-        subheads = [s for s, _ in _BG_WEIGHTS]
-        weights = [w for _, w in _BG_WEIGHTS]
+        stations_by_district: dict[int, list[int]] = {}
+        for u, d, _, _ in self.ctx["stations"]:
+            if u == cfg.HOTSPOT["unit_id"]:  # planted hotspot owns its own phase
+                continue
+            stations_by_district.setdefault(d, []).append(u)
+        districts = list(stations_by_district)
+        dist_weights = [cfg.DISTRICT_VOLUME_WEIGHT.get(d, 5) for d in districts]
+        day_offsets, day_weights = self._background_day_weights()
+
         for _ in range(self.background_cases):
-            unit_id = rng.choice(stations)[0]
-            sub = rng.choices(subheads, weights=weights)[0]
-            occ = cfg.ANCHOR - timedelta(minutes=rng.randint(0, cfg.HISTORY_DAYS * 24 * 60))
-            if sub in _NIGHT_SUBHEADS and rng.random() < 0.6:
-                occ = occ.replace(hour=rng.choice([21, 22, 23, 0, 1, 2]))
+            d = rng.choices(districts, weights=dist_weights)[0]
+            unit_id = rng.choice(stations_by_district[d])
+            mix = cfg.CRIME_MIX_PROFILES[cfg.DISTRICT_PROFILE.get(d, "urban")]
+            sub = rng.choices(list(mix), weights=list(mix.values()))[0]
+            occ = self._draw_background_datetime(sub, day_offsets, day_weights)
             self._add_case(unit_id, sub, occ)
+
+    def _background_day_weights(self) -> tuple[list[int], list[float]]:
+        """Per-day sampling weights over the history: seasonality x day-of-week
+        x gentle year-on-year growth. Uses only the fixed ANCHOR calendar (no
+        wall-clock), so it is deterministic."""
+        offsets = list(range(1, cfg.HISTORY_DAYS + 1))  # >=1 day => always < ANCHOR
+        weights = []
+        for off in offsets:
+            day = cfg.ANCHOR - timedelta(days=off)
+            w = cfg.SEASONAL_MONTH_WEIGHT[day.month - 1]
+            w *= cfg.DOW_WEIGHT[day.weekday()]
+            w *= (1 + cfg.GROWTH_PER_YEAR) ** ((cfg.HISTORY_DAYS - off) / 365.0)
+            weights.append(w)
+        return offsets, weights
+
+    def _draw_background_datetime(self, sub_head_id: int, day_offsets: list[int],
+                                  day_weights: list[float]) -> datetime:
+        rng = self.rng
+        off = rng.choices(day_offsets, weights=day_weights)[0]
+        profile = cfg.HOUR_PROFILES.get(sub_head_id, cfg.HOUR_PROFILE_DEFAULT)
+        hour = rng.choices(range(24), weights=profile)[0]
+        return (cfg.ANCHOR - timedelta(days=off)).replace(
+            hour=hour, minute=rng.randint(0, 59))
 
     def _gen_identity_fragment(self) -> None:
         rng, frag = self.rng, cfg.IDENTITY_FRAGMENT

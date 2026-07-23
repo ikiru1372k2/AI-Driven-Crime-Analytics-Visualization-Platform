@@ -26,6 +26,11 @@ catalyst-debug.log
 data/synthetic/
 # QuickML training table (regenerate via scripts/risk_train_export.py)
 data/risk_train.csv
+# Precomputed MO profiles — a derived artifact tied to the current narratives.
+# Regenerate with Zia via scripts/mo_precompute.py (or the runtime falls back to
+# the deterministic extractor). Not committed: it goes stale whenever narratives
+# change, and CI/AppSail cannot reach Zia anyway (MO-002/#38).
+data/mo_profiles.json
 
 # Source ER design documents (supplied hackathon resource marked
 # "Karnataka Police Department | Confidential" — kept local, not published.
