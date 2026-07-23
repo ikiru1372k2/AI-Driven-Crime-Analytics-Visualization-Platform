@@ -10,7 +10,6 @@ export type ModuleView =
   | "map"
   | "graph"
   | "identities"
-  | "evidence"
   | "mo"
   | "anomalies"
   | "forecast";
@@ -85,7 +84,6 @@ export function CommandNav({
       ],
     },
     { label: "FORECAST", items: [{ label: "Area Risk", view: "forecast", dot: "#5aa9a3" }] },
-    { label: "EXPLAIN", items: [{ label: "Evidence", view: "evidence", dot: "#3c9a5f" }] },
   ];
 
   return (

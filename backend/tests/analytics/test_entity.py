@@ -26,6 +26,8 @@ def planted(tmp_path_factory):
     prev = os.environ.get("KAVACH_DATA_DIR")
     os.environ["KAVACH_DATA_DIR"] = str(out)
     data.enriched_cases.cache_clear()
+    data.accused_records.cache_clear()
+    data.victim_records.cache_clear()
     resolve_identities.cache_clear()
     gt = json.loads((out / "ground_truth.json").read_text())
     yield gt

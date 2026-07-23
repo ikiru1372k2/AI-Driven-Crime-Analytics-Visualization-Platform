@@ -4,6 +4,10 @@ Hermetic: generates a dataset, points the data layer at it, and checks that
 seeding on the planted identity fragment surfaces the SAME suspect's other
 cases (SAME_IDENTITY edges) and that orthogonal filters narrow the result.
 The engine discovers everything from data; it never reads the answer key.
+
+The overview (no focus) is deliberately TRIVIAL (PERF-001): it lists only the
+seed's own entities, each flagged expandable, and computes NO counts and NO
+entity resolution. All related-case work happens on expansion.
 """
 
 import json
@@ -14,11 +18,20 @@ import pytest
 
 from kavach.analytics.association import engine as assoc_engine
 from kavach.analytics.association import find_associations
+from kavach.analytics.entity import resolve_identities
 from kavach.api import data
 from kavach.datagen.generator import generate_dataset
 
 ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = ROOT / "docs/schema/schema-manifest.json"
+
+
+def _clear() -> None:
+    data.enriched_cases.cache_clear()
+    data.accused_records.cache_clear()
+    data.victim_records.cache_clear()
+    resolve_identities.cache_clear()
+    assoc_engine.cache_clear()
 
 
 @pytest.fixture(scope="module")
@@ -27,16 +40,14 @@ def planted(tmp_path_factory):
     generate_dataset(out, MANIFEST, seed=20260714, background_cases=800)
     prev = os.environ.get("KAVACH_DATA_DIR")
     os.environ["KAVACH_DATA_DIR"] = str(out)
-    data.enriched_cases.cache_clear()
-    assoc_engine._same_suspect_index.cache_clear()
+    _clear()
     gt = json.loads((out / "ground_truth.json").read_text())
     yield gt
     if prev is None:
         os.environ.pop("KAVACH_DATA_DIR", None)
     else:
         os.environ["KAVACH_DATA_DIR"] = prev
-    data.enriched_cases.cache_clear()
-    assoc_engine._same_suspect_index.cache_clear()
+    _clear()
 
 
 def test_overview_shows_only_seed_entities(planted):
@@ -46,9 +57,11 @@ def test_overview_shows_only_seed_entities(planted):
     ov = find_associations(seed_case)
     case_nodes = {n["entity_ref_id"] for n in ov["nodes"] if n["node_type"] == "CASE"}
     assert case_nodes == {seed_case}, "overview must not pre-expand related cases"
-    # the seed's entities are present and advertise how many cases they'd reveal
+    # the seed's entities are present and flagged expandable (no counts computed)
     assert any(n["node_type"] == "POLICE_STATION" for n in ov["nodes"])
-    assert ov["total_related"] > 0 and any(v > 0 for v in ov["expandable"].values())
+    assert ov["expandable"] and all(v for v in ov["expandable"].values())
+    # the overview is trivial: it computes no related-case universe
+    assert ov["total_related"] == 0
 
 
 def test_expand_accused_links_same_suspect_cases(planted):
@@ -59,15 +72,22 @@ def test_expand_accused_links_same_suspect_cases(planted):
 
     ov = find_associations(seed_case)
     accused = [n for n in ov["nodes"] if n["node_type"] == "ACCUSED_RECORD"]
-    focus = max(accused, key=lambda n: ov["expandable"].get(n["node_id"], 0))
-    assert ov["expandable"][focus["node_id"]] > 0
+    assert accused, "seed case has no accused to expand"
 
-    ex = find_associations(seed_case, focus=focus["node_id"], limit=60)
-    assert ex["channel"] == "same_suspect"
-    case_nodes = {n["entity_ref_id"] for n in ex["nodes"] if n["node_type"] == "CASE"}
-    assert other_cases <= case_nodes, f"missing same-suspect cases: {other_cases - case_nodes}"
-    si = [e for e in ex["edges"] if e["relationship_type"] == "SAME_IDENTITY"]
-    assert si and all(e["classification"] == "POTENTIAL_ASSOCIATION" for e in si)
+    # expand every accused the seed has; the same-suspect cluster must cover the
+    # planted fragment's other cases (no overview count to pick the node by).
+    found: set[str] = set()
+    saw_same_identity = False
+    for a in accused:
+        ex = find_associations(seed_case, focus=a["node_id"], limit=60)
+        assert ex["channel"] == "same_suspect"
+        found |= {n["entity_ref_id"] for n in ex["nodes"] if n["node_type"] == "CASE"}
+        si = [e for e in ex["edges"] if e["relationship_type"] == "SAME_IDENTITY"]
+        if si:
+            saw_same_identity = True
+            assert all(e["classification"] == "POTENTIAL_ASSOCIATION" for e in si)
+    assert other_cases <= found, f"missing same-suspect cases: {other_cases - found}"
+    assert saw_same_identity
 
 
 def test_every_edge_cites_evidence(planted):
@@ -76,14 +96,27 @@ def test_every_edge_cites_evidence(planted):
     assert all(isinstance(e["evidence_case_id"], int) for e in ov["edges"])
 
 
-def test_filter_narrows_results(planted):
-    """Filters are orthogonal: an impossible district drops the related universe to 0."""
+def test_filter_narrows_expansion(planted):
+    """Filters are applied SERVER-SIDE on an expansion (orthogonal to the View):
+    an impossible crime type drops a district expansion's matches to 0."""
     seed = str(planted["identity_fragment"]["records"][0]["case_id"])
-    wide = find_associations(seed)
-    narrow = find_associations(seed, district_id=999999)  # no such district
-    assert narrow["total_related"] < wide["total_related"]
-    assert narrow["total_related"] == 0
-    assert all(v == 0 for v in narrow["expandable"].values())
+    ov = find_associations(seed)
+    di = next(n for n in ov["nodes"] if n["node_type"] == "DISTRICT")
+    wide = find_associations(seed, focus=di["node_id"], limit=10_000)
+    narrow = find_associations(seed, focus=di["node_id"], limit=10_000, subhead_id=999999)
+    assert narrow["total_matches"] == 0
+    assert narrow["total_matches"] <= wide["total_matches"]
+
+
+def test_expansion_paginates(planted):
+    """An expansion returns one page; offset/limit walk the related cases."""
+    seed = str(planted["identity_fragment"]["records"][0]["case_id"])
+    ov = find_associations(seed)
+    di = next(n for n in ov["nodes"] if n["node_type"] == "DISTRICT")
+    page = find_associations(seed, focus=di["node_id"], limit=5, offset=0)
+    assert page["association_count"] <= 5
+    assert page["association_count"] <= page["total_matches"]
+    assert page["offset"] == 0
 
 
 def test_unknown_seed_is_empty(planted):
@@ -105,89 +138,3 @@ def test_seed_exposes_ids_and_primary_accused_profile(planted):
         assert key in seed
     # the seed case has a planted accused, so its profile is populated
     assert seed["accused_name"]
-
-
-def test_overview_counts_match_default_expansion(planted):
-    """A node's overview `expandable` hint must equal what expanding it actually
-    returns under the client's default similar-profile pre-filter — so hover
-    badges don't over-promise. Here: the crime-sub-head node."""
-    seed_case = str(planted["identity_fragment"]["records"][0]["case_id"])
-    ov = find_associations(seed_case)
-    seed = ov["seed"]
-    sub_node = next(n for n in ov["nodes"] if n["node_type"] == "CRIME_SUBHEAD")
-    hint = ov["expandable"][sub_node["node_id"]]
-
-    # rebuild the client's default pre-filter for a crime-sub-head expansion:
-    # its own attribute (crime type) is dropped; district + suspect profile pinned
-    prof = {"district_id": seed["district_id"]}
-    if seed["accused_gender"]:
-        prof["gender"] = seed["accused_gender"]
-    if seed["accused_age"] is not None:
-        prof["age_min"] = max(0, seed["accused_age"] - 5)
-        prof["age_max"] = min(120, seed["accused_age"] + 5)
-    if seed["accused_name"]:
-        prof["name_contains"] = seed["accused_name"].split()[0]
-
-    ex = find_associations(seed_case, focus=sub_node["node_id"], limit=10_000, **prof)
-    assert ex["total_matches"] == hint, (
-        f"overview hint {hint} != expansion total {ex['total_matches']}"
-    )
-
-
-def _build_prefilter(seed: dict, node_type: str) -> dict:
-    """Mirror the web client's ``buildPreFilter`` (frontend/src/app/graphPreFilter.ts)
-    exactly: pin the seed's crime + district + suspect profile, dropping whichever
-    attribute the expanded node already fixes. Kept in step so the overview hint a
-    node advertises equals what its expansion returns."""
-    f: dict = {}
-    if node_type not in ("CRIME_SUBHEAD", "CRIME_HEAD") and seed["subhead_id"]:
-        f["subhead_id"] = seed["subhead_id"]
-    if node_type != "DISTRICT" and seed["district_id"]:
-        f["district_id"] = seed["district_id"]
-    if seed["accused_gender"]:
-        f["gender"] = seed["accused_gender"]
-    if seed["accused_age"] is not None:
-        f["age_min"] = max(0, seed["accused_age"] - 5)  # AGE_BAND
-        f["age_max"] = min(120, seed["accused_age"] + 5)
-    if seed["accused_name"]:
-        first = seed["accused_name"].split()[0]
-        if first:
-            f["name_contains"] = first
-    return f
-
-
-@pytest.mark.parametrize("node_type", ["POLICE_STATION", "DISTRICT"])
-def test_overview_place_counts_match_expansion(planted, node_type):
-    """The vectorized-mask overview counts (PERF-001 leanness refactor) must equal
-    what expanding the station/district node actually returns under the client's
-    default pre-filter — so hover badges never over-promise."""
-    seed_case = str(planted["identity_fragment"]["records"][0]["case_id"])
-    ov = find_associations(seed_case)
-    node = next((n for n in ov["nodes"] if n["node_type"] == node_type), None)
-    if node is None:
-        pytest.skip(f"seed has no {node_type} node in this dataset")
-    hint = ov["expandable"][node["node_id"]]
-
-    prof = _build_prefilter(ov["seed"], node_type)
-    ex = find_associations(seed_case, focus=node["node_id"], limit=10_000, **prof)
-    assert ex["total_matches"] == hint, (
-        f"{node_type} overview hint {hint} != expansion total {ex['total_matches']}"
-    )
-
-
-def test_overview_accused_count_matches_expansion(planted):
-    """The same-suspect count advertised on an ACCUSED_RECORD node equals the cases
-    its expansion surfaces under the client's default pre-filter. Per buildPreFilter,
-    the accused channel is scoped ONLY to the seed's crime type (not the suspect's
-    own name/age/gender), so identity variants aren't dropped."""
-    seed_case = str(planted["identity_fragment"]["records"][0]["case_id"])
-    ov = find_associations(seed_case)
-    accused = [n for n in ov["nodes"] if n["node_type"] == "ACCUSED_RECORD"]
-    focus = max(accused, key=lambda n: ov["expandable"].get(n["node_id"], 0))
-    hint = ov["expandable"][focus["node_id"]]
-
-    prof = {"subhead_id": ov["seed"]["subhead_id"]}  # buildPreFilter for ACCUSED_RECORD
-    ex = find_associations(seed_case, focus=focus["node_id"], limit=10_000, **prof)
-    assert ex["total_matches"] == hint, (
-        f"accused overview hint {hint} != expansion total {ex['total_matches']}"
-    )

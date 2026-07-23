@@ -152,8 +152,10 @@ export interface AssociationResult {
   association_count: number;
   total_matches: number;
   offset: number;
+  /** always 0 on the overview — it computes no related-case universe (PERF-001). */
   total_related: number;
-  /** node_id -> number of related cases reachable by expanding it (overview hint). */
+  /** node_id -> expandable flag (1 = has more to reveal). No counts (PERF-001);
+   *  the number type is kept so the `> 0` expand gates read unchanged. */
   expandable: Record<string, number>;
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -163,7 +165,7 @@ export interface AssociationResult {
  *  entities), with server-side attribute filters (orthogonal to the View).
  *
  *  focus omitted  -> the overview: the seed case + its own entities, each
- *                    carrying an `expandable` count.
+ *                    flagged `expandable` (no counts — PERF-001).
  *  focus="TYPE:id" -> expand that one entity into its related cases (to merge
  *                    into the current graph). */
 export function fetchAssociations(

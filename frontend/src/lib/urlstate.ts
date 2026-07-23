@@ -11,7 +11,6 @@ export interface HashState {
     | "map"
     | "graph"
     | "identities"
-    | "evidence"
     | "mo"
     | "anomalies"
     | "forecast";
@@ -36,15 +35,13 @@ export function readHashState(): HashState {
         ? "graph"
         : v === "identities"
           ? "identities"
-          : v === "evidence"
-            ? "evidence"
-            : v === "mo"
-              ? "mo"
-              : v === "anomalies"
-                ? "anomalies"
-                : v === "forecast"
-                  ? "forecast"
-                  : "overview";
+          : v === "mo"
+            ? "mo"
+            : v === "anomalies"
+              ? "anomalies"
+              : v === "forecast"
+                ? "forecast"
+                : "overview";
   return {
     view,
     filters,

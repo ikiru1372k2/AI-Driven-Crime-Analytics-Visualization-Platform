@@ -87,14 +87,13 @@ export const LENSES: { key: LensKey; label: string; types: Set<string> | null }[
 
 /** Build cytoscape elements from the merged graph, applying the View projection
  *  (CASE + checked dimensions; seed always kept), dropping edges whose endpoints
- *  aren't both visible and disconnected non-seed nodes, sizing nodes by degree,
- *  and badging still-expandable entities with a "+N related cases" hint.
+ *  aren't both visible and disconnected non-seed nodes, and sizing nodes by
+ *  degree. Nodes carry no related-case counts (PERF-001): expandability is a
+ *  hover/tap affordance, not a badged number.
  *  Pure + extracted so GraphView stays under the source-size gate. */
 export function buildGraphElements(
   merged: { nodes: Map<string, GraphNode>; edges: Map<string, GraphEdge> },
   viewDims: Set<string>,
-  expandable: Record<string, number>,
-  expandedIds: Set<string>,
   seedNodeId: string,
 ) {
   const allowed = new Set<string>(["CASE"]);
@@ -119,10 +118,7 @@ export function buildGraphElements(
     ...shownNodes.map((n) => ({
       data: {
         id: n.node_id,
-        label:
-          expandable[n.node_id] > 0 && !expandedIds.has(n.node_id)
-            ? `${n.label}  +${expandable[n.node_id]}`
-            : n.label,
+        label: n.label,
         type: n.node_type,
         ref: n.entity_ref_id,
         deg: degree.get(n.node_id) ?? 0,
