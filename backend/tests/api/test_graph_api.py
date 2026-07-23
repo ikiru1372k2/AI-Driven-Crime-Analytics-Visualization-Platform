@@ -44,11 +44,18 @@ def client(tmp_path_factory):
 @pytest.fixture(scope="module")
 def ground_truth(client):
     """A multi-accused case from the generated data: (case_id, accused_ids,
-    district_id) — the co-accused clique the subgraph must return."""
+    district_id) — the co-accused clique the subgraph must return.
+
+    The case is chosen with NO arrest records: an arrest links its accused to
+    the district court/station (ARRESTED_IN/PRODUCED_AT), which are legitimate
+    administrative hubs. Seeding depth-2 off a hub pulls in every other accused
+    produced at that court, so the isolated co-accused clique this fixture
+    represents only holds when the seed carries no such hub edge."""
     ctx = graph_context()
     conn = ctx.metrics._conn
     row = conn.execute(
         "SELECT CaseMasterID AS cid, COUNT(*) AS n FROM Accused "
+        "WHERE CaseMasterID NOT IN (SELECT CaseMasterID FROM ArrestSurrender) "
         "GROUP BY CaseMasterID HAVING n BETWEEN 2 AND 10 ORDER BY cid LIMIT 1"
     ).fetchone()
     accused = [

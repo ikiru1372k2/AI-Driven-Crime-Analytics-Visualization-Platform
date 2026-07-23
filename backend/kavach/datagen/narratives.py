@@ -38,9 +38,18 @@ MO_TEMPLATES = [
 PLACES = ["the bus stop", "the market road", "an industrial gate", "the park entrance",
           "a petrol bunk", "the railway underpass", "the temple street",
           "a school gate", "the vegetable market", "an ATM kiosk",
-          "the flyover service lane", "a bank entrance"]
+          "the flyover service lane", "a bank entrance", "the metro station",
+          "a wine shop", "the apartment gate", "a construction site",
+          "the government hospital", "a shopping mall", "the lake bund",
+          "a private layout", "the auto stand", "a wedding hall",
+          "the college campus", "a farmland boundary", "the highway toll",
+          "a cinema hall", "the fish market", "a lodge", "the panchayat office",
+          "a mobile showroom", "the tea stall", "an under-construction building"]
 ROADS = ["Tumakuru Road", "Magadi Road", "the ring road", "the service road", "NH-48",
-         "Kanakapura Road", "the bypass road", "Old Airport Road"]
+         "Kanakapura Road", "the bypass road", "Old Airport Road", "Hosur Road",
+         "Bannerghatta Road", "Mysuru Road", "Sarjapur Road", "the outer ring road",
+         "Ballari Road", "Kolar Road", "the village main road", "NH-75",
+         "the market bylane", "the arterial road", "Whitefield Main Road"]
 
 #: Optional clauses. Each is drawn independently, so different FIRs expose
 #: different attributes — the realistic case, and the reason UNKNOWN rates
@@ -73,7 +82,9 @@ COUNT_PHRASES = [
 ]
 
 #: Multiple wordings per crime sub-head. Some deliberately omit the target or
-#: the method — a real FIR often does.
+#: the method — a real FIR often does. For the five sub-heads scored by the MO
+#: action-agreement oracle (32/71/72/73/111) every wording states the offence's
+#: own action verb and avoids a higher-precedence verb, so extraction agrees.
 BACKGROUND = {
     31: [  # murder / culpable homicide
         "A quarrel between the deceased and the accused escalated near {place}; "
@@ -81,6 +92,10 @@ BACKGROUND = {
         "The accused assaulted the deceased following an altercation at {place}, "
         "causing fatal injuries.",
         "A dispute over money near {place} ended in a violent attack on the deceased.",
+        "The body of the deceased was found near {place} with grievous injuries; "
+        "the family suspects foul play by known persons.",
+        "Following a long-standing enmity, the accused fatally attacked the "
+        "deceased near {place}.",
     ],
     32: [  # hurt / assault
         "The accused assaulted the complainant with hands and a stick near {place} "
@@ -90,6 +105,10 @@ BACKGROUND = {
         "The complainant was assaulted near {place} by known persons after an "
         "argument over parking.",
         "An altercation near {place} led to the accused attacking the complainant.",
+        "Over an old money dispute, the accused assaulted the complainant near "
+        "{place} and caused hurt.",
+        "The complainant was attacked with bare hands near {place} during a heated "
+        "exchange with neighbours.",
     ],
     33: [  # kidnapping / missing
         "The complainant reported that her son was taken away by known persons "
@@ -97,6 +116,8 @@ BACKGROUND = {
         "The complainant states that his daughter was missing from {place} since "
         "the previous evening.",
         "Unknown persons took away a minor from near {place} without consent.",
+        "The complainant alleges his sister was lured away from {place} on a false "
+        "pretext and has not returned.",
     ],
     71: [  # robbery
         "Unknown persons waylaid the complainant near {place} and robbed cash "
@@ -110,6 +131,8 @@ BACKGROUND = {
         "Unknown persons robbed the complainant of jewellery near {place} under "
         "threat.",
         "The complainant was waylaid near {place} and robbed of cash.",
+        "A delivery agent was intercepted near {place} and robbed of the cash he "
+        "was carrying.",
     ],
     72: [  # theft
         "Unknown person stole the complainant's mobile phone from his pocket at "
@@ -121,6 +144,8 @@ BACKGROUND = {
         "A mobile phone was stolen from the complainant while travelling by bus "
         "near {place}.",
         "Theft of property was reported from a godown at {place}.",
+        "The complainant's cycle was stolen from outside {place}.",
+        "Unknown persons stole electrical cables from a site near {place}.",
     ],
     73: [  # burglary / house-breaking
         "During the night, unknown persons broke open the lock of the house near "
@@ -131,6 +156,8 @@ BACKGROUND = {
         "committed burglary.",
         "The house of the complainant near {place} was broken into and jewellery "
         "was stolen.",
+        "Unknown persons broke open the shutter of a locked showroom near {place} "
+        "at night and committed theft.",
     ],
     111: [  # cheating / fraud
         "The accused collected money from the complainant promising a job and "
@@ -141,12 +168,148 @@ BACKGROUND = {
         "collected money.",
         "The complainant states that the accused failed to return the money taken "
         "for a business investment.",
+        "The accused cheated the complainant with a fake gold-loan scheme and "
+        "collected an advance.",
     ],
     112: [  # public nuisance / obstruction
         "Nuisance was reported near {place}; the accused obstructed the public "
         "road.",
         "The accused created a disturbance at {place} and obstructed traffic.",
         "A group obstructed the public road near {place} causing inconvenience.",
+        "The accused caused a public nuisance near {place} by playing loud music "
+        "late into the night.",
+    ],
+    # ---- added offence types (unconstrained by the MO oracle) --------------
+    34: [  # attempt to murder
+        "The accused attacked the complainant with a lethal weapon near {place} "
+        "with intent to kill; the complainant survived with grievous injuries.",
+        "During an enmity dispute near {place}, the accused stabbed the complainant "
+        "who is battling for life in hospital.",
+    ],
+    35: [  # rioting
+        "A group armed with sticks gathered near {place} and indulged in rioting, "
+        "damaging property.",
+        "Two factions clashed near {place}; an unlawful assembly pelted stones and "
+        "disturbed public peace.",
+    ],
+    36: [  # grievous hurt
+        "The accused assaulted the complainant with an iron rod near {place}, "
+        "causing a fracture.",
+        "In a dispute over a boundary near {place}, the accused caused grievous "
+        "injuries to the complainant.",
+    ],
+    37: [  # rash & negligent driving
+        "A speeding vehicle driven rashly near {place} knocked down the "
+        "complainant, causing injuries.",
+        "The accused drove a lorry in a rash and negligent manner near {place} and "
+        "hit a two-wheeler.",
+    ],
+    74: [  # vehicle theft
+        "The complainant's motorcycle parked near {place} was stolen by unknown "
+        "persons.",
+        "A car parked outside {place} was stolen overnight; theft was noticed in "
+        "the morning.",
+        "Unknown persons stole a parked scooter from near {place}.",
+    ],
+    75: [  # criminal trespass
+        "The accused trespassed into the complainant's site near {place} and "
+        "refused to leave despite objection.",
+        "Unknown persons unlawfully entered the complainant's fenced land near "
+        "{place} and put up a temporary shed.",
+    ],
+    76: [  # extortion
+        "The accused threatened the complainant near {place} and demanded money to "
+        "avoid harm.",
+        "The complainant received threatening calls demanding a large sum, failing "
+        "which harm was threatened near {place}.",
+    ],
+    77: [  # mischief / vandalism
+        "Unknown persons damaged the complainant's parked vehicle near {place} out "
+        "of enmity.",
+        "The accused pelted stones and damaged the shopfront near {place}, causing "
+        "loss.",
+    ],
+    113: [  # criminal intimidation
+        "The accused threatened the complainant with dire consequences near "
+        "{place} over a civil dispute.",
+        "The complainant was intimidated by the accused near {place} and warned "
+        "against filing a complaint.",
+    ],
+    114: [  # forgery
+        "The accused fabricated documents to transfer the complainant's property "
+        "near {place} and used them as genuine.",
+        "The complainant alleges the accused forged his signature on a cheque "
+        "presented near {place}.",
+    ],
+    115: [  # defamation
+        "The accused circulated defamatory messages about the complainant, harming "
+        "his reputation in the {place} area.",
+        "The complainant alleges the accused made false and defamatory statements "
+        "in public near {place}.",
+    ],
+    131: [  # outraging modesty
+        "The accused outraged the modesty of the complainant near {place} and fled "
+        "when she raised an alarm.",
+        "The complainant was harassed and touched inappropriately by the accused "
+        "near {place}.",
+    ],
+    132: [  # domestic cruelty
+        "The complainant states that her husband and in-laws subjected her to "
+        "cruelty and harassment at the matrimonial home near {place}.",
+        "The complainant alleges continued mental and physical harassment by "
+        "family members over a domestic dispute.",
+    ],
+    133: [  # dowry harassment
+        "The complainant alleges harassment by the accused for additional dowry "
+        "since her marriage.",
+        "The complainant states she was subjected to cruelty for non-fulfilment of "
+        "dowry demands near {place}.",
+    ],
+    134: [  # offence against child
+        "The complainant reported an offence against a minor child near {place}; "
+        "the matter is being handled with due care.",
+        "An incident endangering the safety of a child near {place} was reported by "
+        "the guardian.",
+    ],
+    231: [  # NDPS (drugs)
+        "The accused was found in possession of a quantity of contraband near "
+        "{place} during a routine check.",
+        "A tip-off led to the seizure of narcotic substances from the accused near "
+        "{place}.",
+    ],
+    232: [  # arms act
+        "The accused was found carrying an unlicensed firearm near {place} without "
+        "authority.",
+        "An illegal weapon was seized from the accused during a check near {place}.",
+    ],
+    233: [  # excise act
+        "The accused was found transporting illicit liquor near {place} in "
+        "contravention of the Excise Act.",
+        "Illicitly distilled liquor was seized from a shed near {place}.",
+    ],
+    234: [  # gambling act
+        "A group was found gambling for stakes in a public place near {place}; "
+        "cards and cash were seized.",
+        "The accused organised betting near {place}; gambling material was seized.",
+    ],
+    251: [  # cyber fraud
+        "The complainant was cheated of a large sum through a fraudulent online "
+        "investment link.",
+        "An unknown caller posing as a bank officer obtained the complainant's OTP "
+        "and cheated him of money.",
+        "The complainant was defrauded through a fake customer-care number in an "
+        "online scam.",
+    ],
+    252: [  # counterfeiting
+        "The accused was found in possession of counterfeit currency notes near "
+        "{place}.",
+        "Fake branded goods were seized from the accused's shop near {place}.",
+    ],
+    253: [  # criminal breach of trust
+        "The accused, entrusted with the complainant's funds, dishonestly "
+        "misappropriated them.",
+        "The complainant alleges the accused, an employee, misappropriated cash "
+        "entrusted to him for deposit.",
     ],
 }
 
