@@ -12,6 +12,7 @@ export type ModuleView =
   | "identities"
   | "evidence"
   | "mo"
+  | "anomalies"
   | "forecast";
 
 interface NavItem {
@@ -32,6 +33,7 @@ interface Props {
   onView: (v: ModuleView) => void;
   alertCount: number;
   identityCount: number;
+  flagCount: number;
   theme: string;
   onToggleTheme: () => void;
 }
@@ -41,6 +43,7 @@ export function CommandNav({
   onView,
   alertCount,
   identityCount,
+  flagCount,
   theme,
   onToggleTheme,
 }: Props) {
@@ -70,7 +73,17 @@ export function CommandNav({
         },
       ],
     },
-    { label: "FLAG", items: [{ label: "Anomalies", soon: true, dot: "#d95926" }] },
+    {
+      label: "FLAG",
+      items: [
+        {
+          label: "Anomalies",
+          view: "anomalies",
+          dot: "#d95926",
+          badge: flagCount > 0 ? String(flagCount) : undefined,
+        },
+      ],
+    },
     { label: "FORECAST", items: [{ label: "Area Risk", view: "forecast", dot: "#5aa9a3" }] },
     { label: "EXPLAIN", items: [{ label: "Evidence", view: "evidence", dot: "#3c9a5f" }] },
   ];
