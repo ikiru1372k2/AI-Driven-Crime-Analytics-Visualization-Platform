@@ -1,7 +1,7 @@
 /** Static config for the association graph view (colours, seed presets, lenses).
  *  Kept out of GraphView.tsx so the component stays under the source-size gate. */
 import type cytoscape from "cytoscape";
-import type { GraphEdge, GraphNode, NodeType } from "../lib/graphApi";
+import type { AssocFilters, GraphEdge, GraphNode, NodeType } from "../lib/graphApi";
 
 /** Node colours by type (status-neutral palette; classification colours
  *  are reserved for edges so inference-vs-fact stays unambiguous). Grouped by
@@ -46,6 +46,44 @@ export const EDGE_STYLE: Record<string, { color: string; style: string; width: n
 };
 
 export const SEED_TYPES: NodeType[] = ["CASE", "ACCUSED_RECORD", "POLICE_STATION", "DISTRICT"];
+
+/** A saved view for the Back stack: the graph AND everything the stats bar /
+ *  pager / zoom read from, so Back restores a view exactly as it was. */
+export interface ViewSnapshot {
+  nodes: Map<string, GraphNode>;
+  edges: Map<string, GraphEdge>;
+  type: NodeType;
+  id: string;
+  pageInfo: { total: number; offset: number; count: number } | null;
+  activeFocus: string | null;
+  focusId: string | null;
+  expandable: Record<string, number>;
+  page: number;
+  drilled: boolean;
+  filters: AssocFilters;
+  resultCount: number | null;
+}
+
+/** A specific loading line for an expansion, so the cover tells the user exactly
+ *  what's being fetched (e.g. "Loading theft cases similar to this case…"). */
+export function expandLoadingMessage(type: NodeType, label: string): string {
+  const what = label?.trim() || "these";
+  switch (type) {
+    case "CRIME_SUBHEAD":
+    case "CRIME_HEAD":
+    case "SECTION":
+      return `Loading ${what} cases similar to this case…`;
+    case "DISTRICT":
+    case "POLICE_STATION":
+    case "COURT":
+      return `Loading cases in ${what} similar to this case…`;
+    case "ACCUSED_RECORD":
+    case "VICTIM_RECORD":
+      return `Finding other records for ${what}…`;
+    default:
+      return "Loading similar cases…";
+  }
+}
 
 /** A resolvable example id per seed type — used for the placeholder and to
  *  auto-fill a valid id when the type changes, so you can't seed a CASE id

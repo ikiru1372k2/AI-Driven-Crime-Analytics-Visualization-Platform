@@ -116,6 +116,30 @@ def test_evidence_pointer_round_trip():
     }
 
 
+def test_case_detail_is_basic_and_enveloped(client):
+    """PERF-001: a case click returns everything we know about the FIR — basics,
+    people, narrative — as a plain FACT restatement (no graph metrics), and 404s
+    for an unknown id (so a stale node click fails cleanly)."""
+    first = client.get("/api/cases", params={"limit": 1, "with_coords": False})
+    case_id = first.json()["cases"][0]["CaseMasterID"]
+
+    resp = client.get(f"/api/cases/{case_id}")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    case = body["case"]
+    assert case["CaseMasterID"] == case_id
+    # the fields the panel shows — present as keys (values may be null/empty)
+    for k in ("CrimeNo", "district_name", "subhead_name", "status", "narrative"):
+        assert k in case
+    assert isinstance(case["accused"], list)
+    assert isinstance(case["victims"], list)
+    # a pure restatement — FACT, not an inference
+    assert body["intelligence"]["classification"] == "FACT"
+
+    missing = client.get("/api/cases/999999999")
+    assert missing.status_code == 404
+
+
 # -- router contract -----------------------------------------------------
 @pytest.mark.parametrize("route", ENVELOPED_ROUTES)
 def test_analytics_response_carries_valid_envelope(client, route):

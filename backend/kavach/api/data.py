@@ -168,6 +168,38 @@ def case_records(
     return out.where(out.notna(), None).to_dict(orient="records")
 
 
+def case_detail(case_id: int) -> dict | None:
+    """Everything we know about one FIR, or None if the id is unknown.
+
+    Deliberately light (PERF-001): a plain restatement of what's already on the
+    warm caches — the FIR basics (``_CASE_FIELDS``), the people named on it
+    (accused + victims), and the narrative. No graph metrics, no cross-FIR
+    linking, no inference — a case click shows the case at a glance; deeper
+    exploration is a Navigate away.
+    """
+    df = enriched_cases()
+    cid = str(case_id)
+    row = df[df["CaseMasterID"].astype(str) == cid]
+    if row.empty:
+        return None
+    out = row[_CASE_FIELDS].copy()
+    out["registered_date"] = out["registered_date"].dt.strftime("%Y-%m-%d")
+    out["incident_from"] = out["incident_from"].dt.strftime("%Y-%m-%d %H:%M")
+    detail = out.where(out.notna(), None).to_dict(orient="records")[0]
+
+    def _people(records: list[dict]) -> list[dict]:
+        return [
+            {"name": r["name"], "age": r["age"], "gender": r["gender"]}
+            for r in records
+            if str(r["case_id"]) == cid
+        ]
+
+    detail["accused"] = _people(accused_records())
+    detail["victims"] = _people(victim_records())
+    detail["narrative"] = case_narratives().get(int(case_id))
+    return detail
+
+
 @timed_cache(_cache_ttl)
 def accused_records() -> list[dict]:
     """Accused persons joined to their case's district, for entity resolution.

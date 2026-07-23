@@ -906,21 +906,31 @@ select:focus-visible {
   inset: 0;
   background: var(--page);
 }
-/* Loading sits on the graph stage (right), not the rail (left): the subgraph
-   is what's arriving, so the affordance belongs over the canvas (PERF-001). */
+/* Loading covers the whole graph stage: the graph being drawn is what's
+   arriving, so we hide the half-built canvas behind an opaque cover and show a
+   single large, centered, specific message instead of a stale graph (PERF-001). */
 .graph-loading {
   position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
   z-index: 6;
   display: flex;
   align-items: center;
-  background: var(--surface-1);
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  padding: 0.35rem 0.85rem;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+  justify-content: center;
+  background: var(--page);
+}
+.graph-loading .kv-inline-load {
+  flex-direction: column;
+  gap: 1.1rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: center;
+  max-width: 32ch;
+}
+.graph-loading .kv-spinner.sm {
+  width: 42px;
+  height: 42px;
+  border-width: 4px;
 }
 .graph-nodelist {
   list-style: none;
