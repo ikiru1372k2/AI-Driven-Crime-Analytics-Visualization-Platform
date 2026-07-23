@@ -3,113 +3,30 @@
  *
  * The judges asked for prediction, not just history. This shows, per district,
  * how many cases are expected in the next window and how that compares to now —
- * in plain English a senior officer can read at a glance. Every number is Zoho
- * QuickML's (live), never ours; the sentence is either a deterministic template
- * or a Qwen rephrase fenced against inventing numbers. When QuickML is not
- * configured/reachable we say so honestly and show NO numbers (ADR-006).
+ * organised for triage: a statewide hero band (ForecastHero) over a ranked
+ * bullet-bar Risk Ladder (RiskLadder). Every number is Zoho QuickML's (live),
+ * never ours; the sentence is either a deterministic template or a GLM rephrase
+ * fenced against inventing numbers. When QuickML is not configured/reachable we
+ * say so honestly and show NO numbers (ADR-006).
+ *
+ * This component is the orchestrator only — fetch, the three honest states
+ * (error / loading / unavailable), and the provenance footer. The hero band and
+ * ladder live in sibling components to keep every file well under the size gate.
  */
 import { useEffect, useState } from "react";
-import { fetchRisk, type RiskDistrict, type RiskResponse } from "../lib/api";
+import { fetchRisk, type RiskResponse } from "../lib/api";
+import { ForecastHero } from "./ForecastHero";
+import { RiskLadder, type LadderFilter } from "./RiskLadder";
 
 interface Props {
   onOpenCase: (caseId: string) => void;
 }
 
-const LEVEL_ORDER: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
-
-function trendGlyph(trend: string): { glyph: string; word: string } {
-  if (trend === "up") return { glyph: "▲", word: "rising" };
-  if (trend === "down") return { glyph: "▼", word: "falling" };
-  return { glyph: "▬", word: "steady" };
-}
-
-/** Cross-district tally shown up top so an officer sees the shape at a glance. */
-function tally(districts: RiskDistrict[]): { High: number; Medium: number; Low: number } {
-  const t = { High: 0, Medium: 0, Low: 0 };
-  for (const d of districts) t[d.risk_level] += 1;
-  return t;
-}
-
-function DistrictCard({
-  d,
-  onOpenCase,
-}: {
-  d: RiskDistrict;
-  onOpenCase: (caseId: string) => void;
-}) {
-  const { glyph, word } = trendGlyph(d.trend);
-  const pct = d.forecast_pct_change;
-  const pctLabel = pct > 0 ? `+${pct}%` : `${pct}%`;
-  const llm = d.summary_source !== "template";
-  return (
-    <article className={"fc-card level-" + d.risk_level.toLowerCase()}>
-      <div className="fc-card-head">
-        <span className="fc-rank">#{d.rank}</span>
-        <h3 className="fc-district">{d.district_name}</h3>
-        <span className={"fc-chip level-" + d.risk_level.toLowerCase()}>
-          {d.risk_level} risk
-        </span>
-      </div>
-
-      <div className="fc-numbers">
-        <div className="fc-expected">
-          <span className="fc-expected-n">{d.expected_count}</span>
-          <span className="fc-expected-l">cases expected</span>
-        </div>
-        <div className={"fc-trend trend-" + d.trend}>
-          <span className="fc-trend-glyph" aria-hidden>
-            {glyph}
-          </span>
-          <span className="fc-trend-word">
-            {word} {pctLabel}
-          </span>
-          <span className="fc-trend-base">vs {d.recent_count} now</span>
-        </div>
-      </div>
-
-      <p className="fc-summary">{d.summary}</p>
-
-      {d.drivers.length > 0 && (
-        <ul className="fc-drivers" aria-label="Why">
-          {d.drivers.map((driver) => (
-            <li key={driver} className="fc-driver">
-              {driver}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="fc-card-foot">
-        <span className={"fc-conf conf-" + d.confidence.level} title={d.confidence.basis}>
-          Confidence: {d.confidence.level}
-        </span>
-        <span className="fc-source">
-          {llm ? `explained by ${d.summary_source}` : "standard read-out"}
-        </span>
-      </div>
-
-      {d.sample_case_ids.length > 0 && (
-        <div className="fc-cases">
-          <span className="fc-cases-label">Recent cases:</span>
-          {d.sample_case_ids.slice(0, 6).map((id) => (
-            <button
-              key={id}
-              className="fc-case-btn"
-              onClick={() => onOpenCase(id)}
-              title="Open this case in the network view"
-            >
-              FIR {id}
-            </button>
-          ))}
-        </div>
-      )}
-    </article>
-  );
-}
-
 export function ForecastView({ onOpenCase }: Props) {
   const [data, setData] = useState<RiskResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<LadderFilter>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,10 +74,9 @@ export function ForecastView({ onOpenCase }: Props) {
         <div className="fc-unavailable">
           <strong>Forecast unavailable — prediction service not configured.</strong>
           <p>
-            The live forecast is produced by a Zoho QuickML model. It is not reachable
-            from this environment, so no predicted numbers are shown. This is expected on
-            the local demo build; on the deployed platform the model returns per-district
-            forecasts here.
+            The live forecast is produced by a Zoho QuickML model. It is not reachable from this
+            environment, so no predicted numbers are shown. This is expected on the local demo
+            build; on the deployed platform the model returns per-district forecasts here.
           </p>
           {data.reason && <p className="muted small">Reason: {data.reason}</p>}
         </div>
@@ -168,13 +84,20 @@ export function ForecastView({ onOpenCase }: Props) {
     );
   }
 
-  const districts = [...data.districts].sort(
-    (a, b) =>
-      LEVEL_ORDER[a.risk_level] - LEVEL_ORDER[b.risk_level] ||
-      b.expected_count - a.expected_count,
-  );
-  const t = tally(districts);
   const modelVersion = env?.method.model_version ?? data.model_version;
+
+  // Watchlist / hero jump: surface the district in the ladder and scroll to it.
+  const focus = (districtId: string) => {
+    setFilter("all");
+    setExpandedId(districtId);
+    requestAnimationFrame(() => {
+      document
+        .getElementById("rl-" + districtId)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
+  const toggle = (districtId: string) =>
+    setExpandedId((cur) => (cur === districtId ? null : districtId));
 
   return (
     <div className="fc-body">
@@ -182,9 +105,9 @@ export function ForecastView({ onOpenCase }: Props) {
         <div>
           <h1>Area Risk Forecast</h1>
           <p className="fc-sub">
-            Where crime is expected to rise over the next {data.window_days} days, across
-            all {districts.length} districts. Numbers are model predictions — a guide for
-            planning, not a certainty.
+            Where crime is expected to rise over the next {data.window_days} days, across all{" "}
+            {data.districts.length} districts. Numbers are model predictions — a guide for planning,
+            not a certainty.
           </p>
         </div>
         {env && (
@@ -194,17 +117,17 @@ export function ForecastView({ onOpenCase }: Props) {
         )}
       </header>
 
-      <div className="fc-tally">
-        <span className="fc-tally-item level-high">{t.High} high risk</span>
-        <span className="fc-tally-item level-medium">{t.Medium} medium</span>
-        <span className="fc-tally-item level-low">{t.Low} low</span>
-      </div>
+      <ForecastHero districts={data.districts} windowDays={data.window_days} onFocus={focus} />
 
-      <div className="fc-grid">
-        {districts.map((d) => (
-          <DistrictCard key={d.district_id} d={d} onOpenCase={onOpenCase} />
-        ))}
-      </div>
+      <RiskLadder
+        districts={data.districts}
+        filter={filter}
+        onFilterChange={setFilter}
+        expandedId={expandedId}
+        onToggle={toggle}
+        onOpenCase={onOpenCase}
+        windowDays={data.window_days}
+      />
 
       {env?.limitations && env.limitations.length > 0 && (
         <footer className="fc-foot">
