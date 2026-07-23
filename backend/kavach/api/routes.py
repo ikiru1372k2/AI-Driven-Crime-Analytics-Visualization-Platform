@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from kavach.analytics.anomaly import detect_anomalies
 from kavach.analytics.anomaly import engine as anomaly_engine
 from kavach.analytics.association import find_associations
-from kavach.analytics.entity import resolve_identities
+from kavach.analytics.entity import find_similar, resolve_identities
 from kavach.analytics.hotspot import detect_hotspots
 from kavach.analytics.hotspot import engine as hotspot_engine
 from kavach.analytics.risk import engine as risk_engine
@@ -111,6 +111,71 @@ def get_person(
             limitations=(
                 "cases linked by exact name+age+gender — may include different "
                 "people who share them",
+                "synthetic data (ADR-011)",
+            ),
+        ),
+    }
+
+
+@router.get("/accused/ranked")
+def get_ranked_accused(
+    limit: int = Query(default=15, ge=1, le=100, description="page size"),
+    offset: int = Query(default=0, ge=0, description="page offset into the ranked list"),
+) -> dict:
+    """Distinct accused persons ranked by crime count — the Identities tab list.
+
+    A cheap O(n) group-by (``data.ranked_accused``), deliberately NOT
+    ``resolve_identities``: the tab lists everyone by recurrence without the
+    O(n^2) all-pairs scan that timed out. A person is the attribute identity
+    name+age+gender (ADR-003); ``total`` is the full count for paging."""
+    people = data.ranked_accused()
+    page = people[offset:offset + limit]
+    return {
+        "synthetic": True,
+        "total": len(people),
+        "limit": limit,
+        "offset": offset,
+        "returned": len(page),
+        "accused": page,
+        "intelligence": envelope(
+            classification=DataClassification.POTENTIAL_ASSOCIATION,
+            method_name="attribute_grouping",
+            method_version="1.0.0",
+            limitations=(
+                "persons grouped by exact name+age+gender — may merge different "
+                "people who share them (namesakes)",
+                "synthetic data (ADR-011)",
+            ),
+        ),
+    }
+
+
+@router.get("/persons/similar")
+def get_similar_persons(
+    name: str = Query(..., min_length=1, description="query person's name"),
+    age: int | None = Query(default=None, ge=0, le=120),
+    sex: str | None = Query(default=None, description="GenderID to match exactly"),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    """People whose attributes resemble ONE query person — on-demand search.
+
+    A single-person O(n) scan (``find_similar``), never ``resolve_identities``,
+    so it runs live on the request path without timing out. Backs both the
+    per-row "find similar" action and the top name search: matches on fuzzy name
+    + optional age band + optional sex. Leads for review, not confirmed links."""
+    matches = find_similar(name, age, sex, limit=limit)
+    return {
+        "synthetic": True,
+        "query": {"name": name, "age": age, "sex": sex},
+        "match_count": len(matches),
+        "matches": matches,
+        "intelligence": envelope(
+            classification=DataClassification.POTENTIAL_ASSOCIATION,
+            method_name="attribute_similarity_search",
+            method_version="1.0.0",
+            limitations=(
+                "candidate matches from name/age/sex similarity — leads for "
+                "review, not confirmed same-person links",
                 "synthetic data (ADR-011)",
             ),
         ),

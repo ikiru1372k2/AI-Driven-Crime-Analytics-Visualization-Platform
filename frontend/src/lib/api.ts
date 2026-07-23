@@ -372,3 +372,61 @@ export const fetchIdentities = () => getJSON<IdentitiesResponse>("/api/identitie
 
 export const fetchIdentityDetail = (clusterId: string) =>
   getJSON<IdentityCandidate>(`/api/identities/${encodeURIComponent(clusterId)}`);
+
+// --- on-demand person search (ranked accused + similarity) ---
+
+export interface RankedAccused {
+  name: string;
+  age: number | null;
+  gender: string | null;
+  districts: string[];
+  case_count: number;
+}
+
+export interface RankedAccusedResponse {
+  synthetic: boolean;
+  total: number;
+  limit: number;
+  offset: number;
+  returned: number;
+  accused: RankedAccused[];
+}
+
+/** One row in the shared match list — a candidate same-person, with the
+ *  explainable signals behind the score. Used by both search flows. */
+export interface PersonMatch {
+  name: string;
+  age: number | null;
+  gender: string | null;
+  districts: string[];
+  case_count: number;
+  confidence: number;
+  name_sim: number;
+  age_gap: number | null;
+  contributing: string[];
+  contradictory: string[];
+  cross_district: boolean;
+}
+
+export interface PersonMatchesResponse {
+  synthetic: boolean;
+  query: { name: string; age: number | null; sex: string | null };
+  match_count: number;
+  matches: PersonMatch[];
+}
+
+/** Ranked accused list for the Identities tab — a cheap attribute group-by,
+ *  paged 15 at a time. Deliberately NOT the O(n^2) resolve path, so the tab
+ *  loads instantly instead of timing out. */
+export const fetchRankedAccused = (limit: number, offset: number) =>
+  getJSON<RankedAccusedResponse>("/api/accused/ranked", { limit, offset });
+
+/** On-demand similarity search for ONE person (name + optional age + sex).
+ *  Backs both the per-row "Find similar" action and the top name search — one
+ *  live O(n) call per query, never the all-pairs scan. */
+export const fetchSimilarPersons = (q: { name: string; age?: number | null; sex?: string | null }) =>
+  getJSON<PersonMatchesResponse>("/api/persons/similar", {
+    name: q.name,
+    age: q.age ?? undefined,
+    sex: q.sex ?? undefined,
+  });
