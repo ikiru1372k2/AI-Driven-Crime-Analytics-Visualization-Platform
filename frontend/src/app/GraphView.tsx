@@ -57,9 +57,11 @@ interface Props {
   seed: GraphSeed | null;
   onSeed: (s: GraphSeed) => void;
   theme: "dark" | "light";
+  // jump to Identities + search this graph person by name+age+sex
+  onSeeSimilar: (p: PersonDetail) => void;
 }
 
-export function GraphView({ seed, onSeed, theme }: Props) {
+export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const [subgraph, setSubgraph] = useState<Subgraph | null>(null);
@@ -76,8 +78,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [viewDims, setViewDims] = useState<Set<string>>(() => new Set(ALL_VIEW_KEYS));
   const [filters, setFilters] = useState<AssocFilters>({});
   const [resultCount, setResultCount] = useState<number | null>(null);
-  // expandable flag per entity node_id (1 = has more to reveal). No counts
-  // (PERF-001) — it only gates whether a tap expands vs opens details.
+  // expandable flag per entity node_id (1 = more to reveal); gates tap-to-expand (PERF-001)
   const [expandable, setExpandable] = useState<Record<string, number>>({});
   // whether we've drilled into an entity (View belongs to the overview only)
   const [drilled, setDrilled] = useState(false);
@@ -319,8 +320,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     [clearPanels],
   );
 
-  // A person click opens that accused/victim's detail + the cases sharing their
-  // exact name+age+gender (never the old similar-people expansion).
+  // A person click opens their detail + the cases sharing their name+age+gender.
   const openPerson = useCallback((role: "accused" | "victim", refId: string) => {
     fetchPerson(role, refId)
       .then((r) => {
@@ -351,12 +351,14 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const navigate = useCallback(
     (s: GraphSeed) => {
       snapshot();
+      setShowDetail(false); // reseeding the graph closes the current detail panel
       onSeed(s);
     },
     [snapshot, onSeed],
   );
   const expand = useCallback(
     (type: NodeType, id: string) => {
+      clearPanels(); // clicking a node to expand closes any open detail panel
       const key = `${type}:${id}`;
       if (expandedRef.current.has(key)) {
         // already loaded — just refocus/zoom, no new history entry
@@ -387,7 +389,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       setLoadingMsg(expandLoadingMessage(type, label));
       void showFocus(key, 0);
     },
-    [snapshot, load, showFocus, preFilterFor],
+    [snapshot, load, showFocus, preFilterFor, clearPanels],
   );
 
   // Applying a Filter narrows the cases in whatever you've expanded (Filter
@@ -586,12 +588,10 @@ export function GraphView({ seed, onSeed, theme }: Props) {
             person={person}
             canNavigate={canNavigateNode(detail?.node, expandable, merged.edges)}
             onClose={() => setShowDetail(false)}
-            onNavigate={(type, id) => {
-              setShowDetail(false);
-              navigate({ type, id });
-            }}
+            onNavigate={(type, id) => navigate({ type, id })}
             onNavigateCase={(id) => navigate({ type: "CASE", id })}
             onShowPersonCases={showPersonCases}
+            onSeeSimilar={onSeeSimilar}
           />
         )}
       </div>

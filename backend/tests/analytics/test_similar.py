@@ -89,6 +89,33 @@ def test_find_similar_name_only(synth):
     assert all(m["name_sim"] >= 0.5 for m in matches)
 
 
+def test_find_similar_partial_matches_name_fragment(synth):
+    """The top search does PARTIAL matching: a short fragment of a name is a hit."""
+    q = _first_accused(synth)
+    token = next((t for t in q["name"].split() if len(t) >= 4), q["name"])
+    frag = token[:3]  # a 3-letter fragment, like the min the UI enforces
+    matches = find_similar(frag, partial=True)
+    assert any(m["name"] == q["name"] for m in matches), (frag, q["name"])
+    assert all("name matches" in m["contributing"][0] for m in matches)
+
+
+def test_find_similar_partial_matches_surname_fragment(synth):
+    """Partial finds a person by a SURNAME fragment — something the strict,
+    given-name-anchored scorer (partial=False) cannot do."""
+    q = next(
+        (r for r in data.accused_records()
+         if r["name"] and r["gender"] and len(r["name"].split()) >= 2),
+        None,
+    )
+    if q is None:
+        pytest.skip("no multi-token names in this dataset")
+    surname = q["name"].split()[-1]
+    if len(surname) < 3:
+        pytest.skip("surname too short for a 3-letter fragment")
+    frag = surname[:3]
+    assert any(m["name"] == q["name"] for m in find_similar(frag, partial=True))
+
+
 def test_find_similar_never_calls_resolve_identities(synth):
     """The whole point: the search path is O(n) and must not touch the O(n^2)
     ``resolve_identities`` cache — otherwise it would time out like before."""

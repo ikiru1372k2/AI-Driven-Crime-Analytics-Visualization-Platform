@@ -162,8 +162,13 @@ def get_similar_persons(
     A single-person O(n) scan (``find_similar``), never ``resolve_identities``,
     so it runs live on the request path without timing out. Backs both the
     per-row "find similar" action and the top name search: matches on fuzzy name
-    + optional age band + optional sex. Leads for review, not confirmed links."""
-    matches = find_similar(name, age, sex, limit=limit)
+    + optional age band + optional sex. Leads for review, not confirmed links.
+
+    A name-only query (no age, no sex) is the top search box: it matches PARTIAL
+    names (any fragment, anywhere). Supplying age or sex is a row's "find similar",
+    which uses the stricter same-person name scorer."""
+    partial = age is None and sex is None
+    matches = find_similar(name, age, sex, limit=limit, partial=partial)
     return {
         "synthetic": True,
         "query": {"name": name, "age": age, "sex": sex},

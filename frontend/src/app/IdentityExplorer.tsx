@@ -10,7 +10,7 @@
  * results component (MatchList). Matches are leads for review, not confirmed
  * identities (attribute similarity only, ADR-003).
  */
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { fetchSimilarPersons, type PersonMatch, type RankedAccused } from "../lib/api";
 import { AccusedList } from "./AccusedList";
 import { MatchList } from "./MatchList";
@@ -21,7 +21,22 @@ interface Results {
   matches: PersonMatch[];
 }
 
-export function IdentityExplorer() {
+/** A preset search handed in from elsewhere (e.g. the graph's "See similar"). */
+export interface IdentitySearchSeed {
+  name: string;
+  age?: number | null;
+  sex?: string | null;
+}
+
+const MIN_SEARCH = 3; // don't fire the API until the name fragment is meaningful
+
+export function IdentityExplorer({
+  initialSearch = null,
+  onSearchConsumed,
+}: {
+  initialSearch?: IdentitySearchSeed | null;
+  onSearchConsumed?: () => void;
+} = {}) {
   const [term, setTerm] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<Results | null>(null);
@@ -46,12 +61,32 @@ export function IdentityExplorer() {
     }
   };
 
+  // A "See similar" click in the graph arrives as a preset search: prefill the
+  // box and run it once (full name from a real record, so the min-length gate
+  // doesn't apply), then clear it upstream so a later revisit doesn't re-run it.
+  useEffect(() => {
+    if (!initialSearch) return;
+    setTerm(initialSearch.name);
+    void runSearch(initialSearch);
+    onSearchConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSearch]);
+
+  const canSearch = term.trim().length >= MIN_SEARCH && !searching;
+
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (!canSearch) return; // need at least MIN_SEARCH letters
     runSearch({ name: term }); // top search: name only, any age/sex
   };
   const onFindSimilar = (p: RankedAccused) =>
     runSearch({ name: p.name, age: p.age, sex: p.gender }); // row: name + age + sex
+
+  // Back returns to the ranked list AND clears the search box.
+  const onBack = () => {
+    setResults(null);
+    setTerm("");
+  };
 
   return (
     <div className="idx">
@@ -65,10 +100,10 @@ export function IdentityExplorer() {
           <input
             value={term}
             onChange={(e) => setTerm(e.target.value)}
-            placeholder="Search a person by name…"
+            placeholder="Search a person by name (partial name, min 3 letters)…"
             aria-label="Search a person by name"
           />
-          <button type="submit" disabled={!term.trim() || searching}>
+          <button type="submit" disabled={!canSearch}>
             Search
           </button>
         </form>
@@ -79,7 +114,7 @@ export function IdentityExplorer() {
       )}
 
       {results ? (
-        <MatchList query={results.query} matches={results.matches} onBack={() => setResults(null)} />
+        <MatchList query={results.query} matches={results.matches} onBack={onBack} />
       ) : (
         <AccusedList onFindSimilar={onFindSimilar} />
       )}
