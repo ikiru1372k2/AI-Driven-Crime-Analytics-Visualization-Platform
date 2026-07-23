@@ -41,8 +41,15 @@ this table is the single source for `scripts/catalyst/provision_datastore.py`.
 
 ## Deviation log
 
-Empty — no forced column renames (no Data Store reserved-word collisions
-encountered in the documented schema).
+- **`GenderID` (Employee, ComplainantDetails, Victim, Accused): `INT` → `varchar`,
+  not `bigint`.** The ER matrix documents `GenderID` as `INT` but annotates it
+  with "values like m/f/t" / "M/F/T" — it carries single-char categorical codes,
+  not numeric ids. `bigint` rejects `"M"`/`"F"`. Provisioned as `varchar` via
+  `COLUMN_TYPE_OVERRIDES` in `provision_datastore.py`. Column **name** is
+  unchanged (fidelity preserved); only the physical type is adapted.
+
+No forced column renames (no Data Store reserved-word collisions encountered in
+the documented schema).
 
 ## Drift policy
 
