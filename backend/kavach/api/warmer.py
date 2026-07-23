@@ -121,7 +121,7 @@ def _prime() -> None:
         ("enriched_cases", data.enriched_cases),
         ("accused_records", getattr(data, "accused_records", None)),
         ("victim_records", getattr(data, "victim_records", None)),
-        ("ranked_accused", getattr(data, "ranked_accused", None)),  # cheap O(n), backs Identities tab
+        ("ranked_accused", getattr(data, "ranked_accused", None)),  # cheap O(n), Identities tab
         ("resolve_identities", resolve_identities),  # the ~90s O(n^2) step
         ("graph_context", graph_store.graph_context),
         # Model-backed analytics: memoized per default params so /anomalies and
