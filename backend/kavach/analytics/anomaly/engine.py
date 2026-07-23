@@ -38,6 +38,7 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 
 from kavach.api import data
+from kavach.api.ttl_cache import timed_cache_keyed
 from kavach.catalyst.quickml import QuickMLClient, QuickMLUnavailable
 from kavach.config import settings
 
@@ -111,6 +112,24 @@ def detect_anomalies(
         max_flags: cap on the number of ranked flags returned.
         quickml: injected client (tests pass a fake); defaults to one from settings.
     """
+    # Production path (no injected client) is memoized per params with the data
+    # TTL: repeat requests and the background warmer reuse one scan instead of
+    # refitting the IsolationForest and re-calling the LLM every time. Tests
+    # inject a client and always run fresh, so nothing leaks across them. Return
+    # a shallow copy so the route adding its envelope never mutates the cache.
+    if quickml is None:
+        return {**_detect_cached(window_days, min_score, max_flags)}
+    return _detect_impl(window_days, min_score, max_flags, quickml)
+
+
+@timed_cache_keyed(data._cache_ttl)
+def _detect_cached(window_days: int, min_score: float, max_flags: int) -> dict:
+    return _detect_impl(window_days, min_score, max_flags, _default_client())
+
+
+def _detect_impl(
+    window_days: int, min_score: float, max_flags: int, quickml: QuickMLClient
+) -> dict:
     params = {"window_days": window_days, "min_score": min_score, "max_flags": max_flags}
     df = data.enriched_cases()
     df = df[df["registered_date"].notna() & df["station_id"].notna()].copy()
@@ -141,8 +160,7 @@ def detect_anomalies(
     flags.sort(key=lambda f: f["score"], reverse=True)
     flags = flags[:max_flags]
 
-    client = quickml if quickml is not None else _default_client()
-    _polish_reasons(flags, client)
+    _polish_reasons(flags, quickml)
 
     for rank, f in enumerate(flags, 1):
         f["rank"] = rank

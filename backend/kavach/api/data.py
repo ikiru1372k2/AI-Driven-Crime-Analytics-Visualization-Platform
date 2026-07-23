@@ -48,9 +48,15 @@ def _cache_ttl() -> float:
 def _read(name: str) -> pd.DataFrame:
     """Read one source table as strings ("" for blanks), from the active source.
 
-    CSV and Data Store both return the same columns and string cells, so callers
-    are source-agnostic.
+    Resolution order (PERF-001): the in-memory **snapshot** first (published by
+    ``warmer.py`` off the request path), so no request ever blocks on a cold
+    whole-dataset read; then the live Data Store; then the bundled CSV. All three
+    yield the same columns and string cells, so callers are source-agnostic.
     """
+    from kavach.api import snapshot  # leaf module, no cycle
+
+    if snapshot.has_table(name):
+        return snapshot.get_table(name)
     if _use_datastore():
         from kavach.api import datastore  # lazy: CSV mode never imports it
 
@@ -167,6 +173,9 @@ def accused_records() -> list[dict]:
 
     Deliberately does NOT expose PersonID: identity must be *discovered* from
     attributes across FIRs, never joined on the per-record PersonID (ADR-003).
+
+    Not memoized: reads run against the (already cached) enriched_cases + a fast
+    _read, and the heavy consumer — resolve_identities — is itself cached/warmed.
     """
     cols = ["AccusedMasterID", "CaseMasterID", "AccusedName", "AgeYear", "GenderID"]
     acc = _read("Accused")[cols]

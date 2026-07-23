@@ -18,9 +18,9 @@ import {
   type MoCase,
   type MoListRow,
   type MoMatch,
-  type MoRun,
-  type MoVocabulary,
 } from "../lib/moApi";
+import { useCachedQuery } from "../lib/queryCache";
+import { Spinner } from "./Loading";
 
 const PAGE_SIZE = 40;
 
@@ -47,7 +47,10 @@ function Narrative({ text, span }: { text: string; span: [number, number] | null
 }
 
 export function MoView() {
-  const [run, setRun] = useState<MoRun | null>(null);
+  // Static run stats + filter vocabulary — cached so revisiting the tab is
+  // instant (PERF-001). The profile list stays server-paged/debounced below.
+  const { data: run = null } = useCachedQuery("mo:run", fetchMoRun);
+  const { data: vocab = null } = useCachedQuery("mo:vocab", fetchMoVocabulary);
   const [rows, setRows] = useState<MoListRow[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<MoCase | null>(null);
@@ -61,16 +64,10 @@ export function MoView() {
   const [loadingRelated, setLoadingRelated] = useState(false);
   // MO attribute filters — "find cases committed THIS way", without needing
   // to already have a case in hand
-  const [vocab, setVocab] = useState<MoVocabulary | null>(null);
   const [action, setAction] = useState("");
   const [target, setTarget] = useState("");
   const [mobility, setMobility] = useState("");
   const hasFilters = Boolean(query || action || target || mobility);
-
-  useEffect(() => {
-    fetchMoRun().then(setRun).catch((e) => setError(String(e)));
-    fetchMoVocabulary().then(setVocab).catch(() => {});
-  }, []);
 
   // debounce so typing an FIR number does not fire a request per keystroke
   useEffect(() => {
@@ -251,7 +248,11 @@ export function MoView() {
           ))}
           {rows.length === 0 && (
             <li className="muted">
-              {hasFilters ? "no FIR matches these filters" : "loading…"}
+              {hasFilters ? (
+                "no FIR matches these filters"
+              ) : (
+                <Spinner label="loading cases…" />
+              )}
             </li>
           )}
         </ul>
@@ -371,6 +372,10 @@ export function MoView() {
               </div>
             )}
           </>
+        ) : selected != null ? (
+          <div style={{ padding: "2rem" }}>
+            <Spinner label="loading narrative…" />
+          </div>
         ) : (
           <p className="muted" style={{ padding: "2rem" }}>
             select a case to see its narrative and extracted MO

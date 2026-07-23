@@ -11,10 +11,10 @@ import {
   fetchActivity,
   fetchEvidenceRuns,
   fetchRunDetail,
-  type ActivityEntry,
-  type EvidenceRun,
   type RunDetail,
 } from "../lib/evidenceApi";
+import { useCachedQuery } from "../lib/queryCache";
+import { Spinner } from "./Loading";
 
 const TYPE_COLORS: Record<string, string> = {
   HOTSPOT: "var(--series-1, #3987e5)",
@@ -32,22 +32,25 @@ interface Props {
 }
 
 export function EvidenceView({ onOpenCase }: Props) {
-  const [runs, setRuns] = useState<EvidenceRun[]>([]);
+  // Runs + activity cached at module scope so tab revisits are instant
+  // (PERF-001); the run detail stays selection-driven (lazy) below.
+  const { data: runsData, error: runsError } = useCachedQuery(
+    "evidence:runs",
+    fetchEvidenceRuns,
+  );
+  const { data: activityData } = useCachedQuery("evidence:activity", fetchActivity);
+  const runs = runsData?.runs ?? [];
+  const activity = activityData?.activity ?? [];
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Auto-select the first completed run once the list arrives.
   useEffect(() => {
-    fetchEvidenceRuns()
-      .then((r) => {
-        setRuns(r.runs);
-        const first = r.runs.find((x) => x.status === "COMPLETED");
-        if (first) setSelected(first.run_id);
-      })
-      .catch((e) => setError(String(e)));
-    fetchActivity().then((a) => setActivity(a.activity)).catch(() => {});
-  }, []);
+    if (selected || !runsData) return;
+    const first = runsData.runs.find((x) => x.status === "COMPLETED");
+    if (first) setSelected(first.run_id);
+  }, [runsData, selected]);
 
   useEffect(() => {
     if (!selected) return;
@@ -83,9 +86,13 @@ export function EvidenceView({ onOpenCase }: Props) {
               </button>
             </li>
           ))}
-          {runs.length === 0 && !error && <li className="muted">loading runs…</li>}
+          {runs.length === 0 && !error && !runsError && (
+            <li><Spinner label="loading runs…" /></li>
+          )}
         </ul>
-        {error && <p className="error">{error}</p>}
+        {Boolean(error || runsError) && (
+          <p className="error">{String(error ?? runsError)}</p>
+        )}
       </aside>
 
       {/* method card + evidence walk */}
@@ -171,6 +178,10 @@ export function EvidenceView({ onOpenCase }: Props) {
               )}
             </ul>
           </>
+        ) : selected ? (
+          <div style={{ padding: "2rem" }}>
+            <Spinner label="loading evidence…" />
+          </div>
         ) : (
           <p className="muted" style={{ padding: "2rem" }}>
             select a run to inspect its method and evidence

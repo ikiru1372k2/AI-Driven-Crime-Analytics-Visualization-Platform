@@ -132,3 +132,62 @@ def test_overview_counts_match_default_expansion(planted):
     assert ex["total_matches"] == hint, (
         f"overview hint {hint} != expansion total {ex['total_matches']}"
     )
+
+
+def _build_prefilter(seed: dict, node_type: str) -> dict:
+    """Mirror the web client's ``buildPreFilter`` (frontend/src/app/graphPreFilter.ts)
+    exactly: pin the seed's crime + district + suspect profile, dropping whichever
+    attribute the expanded node already fixes. Kept in step so the overview hint a
+    node advertises equals what its expansion returns."""
+    f: dict = {}
+    if node_type not in ("CRIME_SUBHEAD", "CRIME_HEAD") and seed["subhead_id"]:
+        f["subhead_id"] = seed["subhead_id"]
+    if node_type != "DISTRICT" and seed["district_id"]:
+        f["district_id"] = seed["district_id"]
+    if seed["accused_gender"]:
+        f["gender"] = seed["accused_gender"]
+    if seed["accused_age"] is not None:
+        f["age_min"] = max(0, seed["accused_age"] - 5)  # AGE_BAND
+        f["age_max"] = min(120, seed["accused_age"] + 5)
+    if seed["accused_name"]:
+        first = seed["accused_name"].split()[0]
+        if first:
+            f["name_contains"] = first
+    return f
+
+
+@pytest.mark.parametrize("node_type", ["POLICE_STATION", "DISTRICT"])
+def test_overview_place_counts_match_expansion(planted, node_type):
+    """The vectorized-mask overview counts (PERF-001 leanness refactor) must equal
+    what expanding the station/district node actually returns under the client's
+    default pre-filter — so hover badges never over-promise."""
+    seed_case = str(planted["identity_fragment"]["records"][0]["case_id"])
+    ov = find_associations(seed_case)
+    node = next((n for n in ov["nodes"] if n["node_type"] == node_type), None)
+    if node is None:
+        pytest.skip(f"seed has no {node_type} node in this dataset")
+    hint = ov["expandable"][node["node_id"]]
+
+    prof = _build_prefilter(ov["seed"], node_type)
+    ex = find_associations(seed_case, focus=node["node_id"], limit=10_000, **prof)
+    assert ex["total_matches"] == hint, (
+        f"{node_type} overview hint {hint} != expansion total {ex['total_matches']}"
+    )
+
+
+def test_overview_accused_count_matches_expansion(planted):
+    """The same-suspect count advertised on an ACCUSED_RECORD node equals the cases
+    its expansion surfaces under the client's default pre-filter. Per buildPreFilter,
+    the accused channel is scoped ONLY to the seed's crime type (not the suspect's
+    own name/age/gender), so identity variants aren't dropped."""
+    seed_case = str(planted["identity_fragment"]["records"][0]["case_id"])
+    ov = find_associations(seed_case)
+    accused = [n for n in ov["nodes"] if n["node_type"] == "ACCUSED_RECORD"]
+    focus = max(accused, key=lambda n: ov["expandable"].get(n["node_id"], 0))
+    hint = ov["expandable"][focus["node_id"]]
+
+    prof = {"subhead_id": ov["seed"]["subhead_id"]}  # buildPreFilter for ACCUSED_RECORD
+    ex = find_associations(seed_case, focus=focus["node_id"], limit=10_000, **prof)
+    assert ex["total_matches"] == hint, (
+        f"accused overview hint {hint} != expansion total {ex['total_matches']}"
+    )

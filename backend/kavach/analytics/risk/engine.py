@@ -27,6 +27,7 @@ import numpy as np
 
 from kavach.analytics.risk import features
 from kavach.api import data
+from kavach.api.ttl_cache import timed_cache_keyed
 from kavach.catalyst.quickml import QuickMLClient, QuickMLUnavailable
 from kavach.config import settings
 
@@ -68,7 +69,22 @@ def forecast_area_risk(*, window_days: int = 30, quickml: QuickMLClient | None =
         quickml: injected client (tests pass a fake); defaults to one built
             from settings.
     """
-    client = quickml if quickml is not None else _default_client()
+    # Production path (no injected client) is memoized per window with the data
+    # TTL, so repeat requests and the warmer reuse one forecast instead of
+    # re-calling live QuickML predict + the LLM every time; freshness = the TTL.
+    # Tests inject a client and always run fresh. Shallow-copy so the route's
+    # envelope write never mutates the cached dict.
+    if quickml is None:
+        return {**_forecast_cached(window_days)}
+    return _forecast_impl(window_days, quickml)
+
+
+@timed_cache_keyed(data._cache_ttl)
+def _forecast_cached(window_days: int) -> dict:
+    return _forecast_impl(window_days, _default_client())
+
+
+def _forecast_impl(window_days: int, client: QuickMLClient) -> dict:
     rows = features.serving_rows(window_days)
     feature_rows = [{c: r[c] for c in features.FEATURE_COLUMNS} for r in rows]
 

@@ -84,15 +84,29 @@ class GraphContext:
 def _load_into(conn) -> None:
     """Load the active source into the SQLite fixture.
 
-    CSV source loads straight from ``data_dir()``. Data Store source materialises
-    the tables to a temp dir first, so the CSV-based ingestion loader runs
-    unchanged, then cleans up.
+    Resolution order (PERF-001): the in-memory **snapshot** first (published by
+    ``warmer.py`` off the request path — a graph rebuild never blocks on a cold
+    Data Store read); then a live Data Store materialise; then the bundled CSVs.
+    Both non-CSV paths dump to a temp dir so the CSV-based ingestion loader runs
+    unchanged, then clean up.
     """
+    from kavach.api import snapshot  # leaf module, no cycle
+    from kavach.ingestion.loader import LOAD_ORDER
+
+    if snapshot.is_ready():
+        tmp = Path(tempfile.mkdtemp(prefix="kavach-snap-"))
+        try:
+            for table in LOAD_ORDER:
+                if snapshot.has_table(table):
+                    snapshot.get_table(table).to_csv(tmp / f"{table}.csv", index=False)
+            load_dataset(tmp, _manifest_path(), conn)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        return
     if not _use_datastore():
         load_dataset(data_dir(), _manifest_path(), conn)
         return
     from kavach.api import datastore  # lazy: CSV mode never imports it
-    from kavach.ingestion.loader import LOAD_ORDER
 
     tmp = Path(tempfile.mkdtemp(prefix="kavach-ds-"))
     try:

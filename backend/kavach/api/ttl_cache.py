@@ -60,3 +60,40 @@ def timed_cache(ttl_fn: Callable[[], float]):
         return wrapper
 
     return decorator
+
+
+def timed_cache_keyed(ttl_fn: Callable[[], float]):
+    """``timed_cache`` for functions memoized per positional-argument key.
+
+    Same TTL semantics as :func:`timed_cache`, but keeps one entry per distinct
+    args tuple (all args must be hashable). Used for analytics whose result is
+    a pure function of a few request parameters (e.g. the anomaly scan / risk
+    forecast per ``window_days``) — so repeat requests and the background warmer
+    reuse the same computed result. Exposes ``cache_clear()``.
+    """
+
+    def decorator(fn: Callable[..., T]) -> Callable[..., T]:
+        store: dict[tuple, tuple[object, float]] = {}
+        lock = threading.Lock()
+
+        @functools.wraps(fn)
+        def wrapper(*args) -> T:
+            ttl = ttl_fn()
+            now = time.monotonic()
+            with lock:
+                hit = store.get(args)
+                if hit is not None and (ttl == float("inf") or now - hit[1] < ttl):
+                    return hit[0]  # type: ignore[return-value]
+            value = fn(*args)
+            with lock:
+                store[args] = (value, now)
+            return value
+
+        def cache_clear() -> None:
+            with lock:
+                store.clear()
+
+        wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorator

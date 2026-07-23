@@ -160,27 +160,42 @@ def find_associations(
         vic_by_case.setdefault(v["case_id"], []).append(v)
     seed_accused = acc_by_case.get(cid0, [])
     ident_idx = _same_suspect_index()
-    rows_by_cid = {r.CaseMasterID: r for r in df.itertuples(index=False)}
+
+    # A case's identity is its CaseMasterID; a full row is only needed when a
+    # caller filter (or an expansion) actually inspects one, so the row index is
+    # built lazily — the common, unfiltered overview never materialises it.
+    all_ids = set(df["CaseMasterID"])
+    rows_by_cid: dict | None = None
+
+    def _rows() -> dict:
+        nonlocal rows_by_cid
+        if rows_by_cid is None:
+            rows_by_cid = {r.CaseMasterID: r for r in df.itertuples(index=False)}
+        return rows_by_cid
 
     def _case_passes(cid: str, f: dict) -> bool:
-        row = rows_by_cid.get(cid)
+        row = _rows().get(cid)
         return row is not None and _passes_filters(cid, row, acc_by_case, vic_by_case, f)
 
     def qualifies(cid: str) -> bool:
-        return _case_passes(cid, filters)
+        # with no active filters, qualifying is just "a real, non-seed case"
+        return cid in all_ids if not active else _case_passes(cid, filters)
 
-    # candidate related cases per channel (filtered), excluding the seed
+    # Per-channel candidate pools — needed only to PAGINATE an expansion. The
+    # overview counts its channels with vectorised masks instead (see below), so
+    # it never makes this full O(n) pass over the dataset.
     station_cases, district_cases, subhead_cases = [], [], []
-    for row in df.itertuples(index=False):
-        cid = row.CaseMasterID
-        if cid == cid0 or not qualifies(cid):
-            continue
-        if row.station_id == s["station_id"]:
-            station_cases.append(cid)
-        if row.district_id == s["district_id"]:
-            district_cases.append(cid)
-        if row.subhead_id == s["subhead_id"]:
-            subhead_cases.append(cid)
+    if focus is not None:
+        for row in df.itertuples(index=False):
+            cid = row.CaseMasterID
+            if cid == cid0 or not qualifies(cid):
+                continue
+            if row.station_id == s["station_id"]:
+                station_cases.append(cid)
+            if row.district_id == s["district_id"]:
+                district_cases.append(cid)
+            if row.subhead_id == s["subhead_id"]:
+                subhead_cases.append(cid)
     # same-suspect: seed accused id -> {other case_id: other member}
     suspect_by_acc: dict[str, dict[str, dict]] = {}
     for sa in seed_accused:
@@ -204,7 +219,7 @@ def find_associations(
         g.node("VICTIM_RECORD", v["victim_id"], v["name"])
         g.edge("VICTIM_IN", "FACT", f"VICTIM_RECORD:{v['victim_id']}", seed_case, 1.0, case_id)
 
-    # how many related cases each entity would reveal.
+    # how many related cases each entity would reveal, and the overall universe.
     if focus is not None:
         # in an expansion the request already carries the active filters, so the
         # per-channel pools are correctly scoped — count them directly.
@@ -216,12 +231,20 @@ def find_associations(
         for sa in seed_accused:
             aid = sa["accused_id"]
             expandable[f"ACCUSED_RECORD:{aid}"] = len(suspect_by_acc.get(aid, {}))
+        total_related = len(
+            set(station_cases) | set(district_cases) | set(subhead_cases)
+            | {c for m in suspect_by_acc.values() for c in m}
+        )
     else:
         # OVERVIEW: show the count a node reveals when expanded BY DEFAULT — i.e.
         # under the seed's similar-profile pre-filter the client pre-applies — so
         # a node's badge/hover matches what clicking it shows. Each entity drops
         # its own attribute from the profile. Keep this in step with preFilterFor
         # in the web client (frontend/src/app/GraphView.tsx).
+        #
+        # Computed WITHOUT a full scan: narrow to the rows a channel could reach
+        # with vectorised masks first, then run the people-based profile checks
+        # only on that (small) survivor set — "read only what's needed".
         acc0 = seed_accused[0] if seed_accused else None
         prof: dict = {}
         if acc0 and acc0.get("gender"):
@@ -231,35 +254,44 @@ def find_associations(
             prof["age_max"] = min(120, acc0["age"] + _AGE_BAND)
         if acc0 and acc0.get("name"):
             prof["name_contains"] = acc0["name"].split()[0]
-        # district- and crime-sub-head expansions share the same effective filter
-        # (crime + district + suspect profile); a station also pins the station.
-        place = {**prof, "subhead_id": s["subhead_id"], "district_id": s["district_id"]}
-        place_station = {**place, "station_id": s["station_id"]}
-        # counts stay orthogonal to any caller filters: a case is counted only if
-        # it passes BOTH the explicit filters (`qualifies`) AND the default
-        # profile. With no filters `qualifies` admits everything (normal case);
-        # an impossible filter (e.g. unknown district) zeroes every count.
-        n_place = sum(
-            1 for row in df.itertuples(index=False)
-            if row.CaseMasterID != cid0
-            and qualifies(row.CaseMasterID)
-            and _case_passes(row.CaseMasterID, place)
-        )
-        n_station = sum(
-            1 for row in df.itertuples(index=False)
-            if row.CaseMasterID != cid0
-            and qualifies(row.CaseMasterID)
-            and _case_passes(row.CaseMasterID, place_station)
-        )
+
+        not_seed = df["CaseMasterID"] != cid0
+        m_station = not_seed & (df["station_id"] == s["station_id"])
+        m_district = not_seed & (df["district_id"] == s["district_id"])
+        m_subhead = not_seed & (df["subhead_id"] == s["subhead_id"])
+
+        # district & sub-head expansions share the effective filter (crime +
+        # district + suspect profile); a station additionally pins the station.
+        # Both pin crime AND district, so their candidate rows are identical —
+        # count once, and take the station-matching share for the station node.
+        station_id = s["station_id"]
+        n_place = n_station = 0
+        for row in df[m_subhead & m_district].itertuples(index=False):
+            cid = row.CaseMasterID
+            if active and not _passes_filters(cid, row, acc_by_case, vic_by_case, filters):
+                continue
+            if not _passes_filters(cid, row, acc_by_case, vic_by_case, prof):
+                continue
+            n_place += 1
+            if row.station_id == station_id:
+                n_station += 1
         expandable = {st: n_station, di: n_place, sh: n_place}
+
         # the same-person (accused) channel is scoped only to the seed's crime type
-        crime_only = {"subhead_id": s["subhead_id"]}
+        subhead_ids = set(df.loc[m_subhead, "CaseMasterID"])
         for sa in seed_accused:
             aid = sa["accused_id"]
             members = suspect_by_acc.get(aid, {})
             expandable[f"ACCUSED_RECORD:{aid}"] = sum(
-                1 for cid in members if qualifies(cid) and _case_passes(cid, crime_only)
+                1 for cid in members if cid in subhead_ids and qualifies(cid)
             )
+
+        # overall related universe (union across channels), caller-filtered
+        union_ids = set(df.loc[m_station | m_district | m_subhead, "CaseMasterID"])
+        if active:
+            union_ids = {c for c in union_ids if qualifies(c)}
+        union_ids |= {c for m in suspect_by_acc.values() for c in m}
+        total_related = len(union_ids)
 
     # ---- expand one entity into its related cases (paginated) ----
     assoc_count = 0
@@ -312,8 +344,7 @@ def find_associations(
         "association_count": assoc_count,
         "total_matches": total_matches,
         "offset": offset,
-        "total_related": len(set(station_cases) | set(district_cases) | set(subhead_cases)
-                             | {c for m in suspect_by_acc.values() for c in m}),
+        "total_related": total_related,
         "expandable": expandable,
         "nodes": list(g.nodes.values()),
         "edges": list(g.edges.values()),
