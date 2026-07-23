@@ -1,21 +1,25 @@
-"""Local synthetic-data access for the analytics API (LOCAL/demo path).
+"""Synthetic-data access for the analytics API (CSV or Catalyst Data Store).
 
-Reads the generated CSVs from ``data/synthetic`` into pandas DataFrames, joins
-human-readable lookup names, and caches the result. This is deliberately the
-LOCAL adapter - the Catalyst Data Store adapter (CAT-002) will later expose the
-same enriched-case shape behind the same functions, so API/analytics code does
-not change when persistence moves to Catalyst.
+Reads each source table into a string-typed pandas DataFrame, joins human-readable
+lookup names, and caches the result. The row *source* is chosen at runtime by
+``KAVACH_DATA_SOURCE``: ``"csv"`` (bundled synthetic CSVs from ``data/synthetic``,
+the prod-safe default) or ``"datastore"`` (live Catalyst Data Store, so edits made
+in the Zoho console show up in the app). Both sources yield the *same* column
+shape and string cells, so nothing below ``_read`` — nor any API/analytics
+consumer — changes when the flag flips.
 
 All data is SYNTHETIC (ADR-011). Nothing here reads the generator's answer key.
 """
 
 from __future__ import annotations
 
-import functools
 import os
 from pathlib import Path
 
 import pandas as pd
+
+from kavach.api.ttl_cache import timed_cache
+from kavach.config import settings
 
 #: repo root = backend/kavach/api/data.py -> parents[3]
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -26,8 +30,31 @@ def data_dir() -> Path:
     return Path(os.environ.get("KAVACH_DATA_DIR", _REPO_ROOT / "data" / "synthetic"))
 
 
+def _use_datastore() -> bool:
+    """True when the live Catalyst Data Store is the configured source."""
+    return settings.data_source.strip().lower() == "datastore"
+
+
+def _cache_ttl() -> float:
+    """Cache lifetime for the joined frames: forever for static CSVs, else TTL.
+
+    CSV data is static for a run, so it caches for the process lifetime (as
+    before). Data Store rows can change under us, so the joined result expires
+    after the configured TTL and is rebuilt, picking up console edits.
+    """
+    return settings.datastore_cache_ttl if _use_datastore() else float("inf")
+
+
 def _read(name: str) -> pd.DataFrame:
-    """Read one source CSV as strings ("" for blanks), preserving raw values."""
+    """Read one source table as strings ("" for blanks), from the active source.
+
+    CSV and Data Store both return the same columns and string cells, so callers
+    are source-agnostic.
+    """
+    if _use_datastore():
+        from kavach.api import datastore  # lazy: CSV mode never imports it
+
+        return datastore.read_table(name)
     path = data_dir() / f"{name}.csv"
     if not path.exists():
         raise FileNotFoundError(
@@ -37,13 +64,14 @@ def _read(name: str) -> pd.DataFrame:
     return pd.read_csv(path, dtype=str, keep_default_na=False)
 
 
-@functools.lru_cache(maxsize=1)
+@timed_cache(_cache_ttl)
 def enriched_cases() -> pd.DataFrame:
     """CaseMaster joined with its lookup names, one row per FIR.
 
     Adds: subhead_name, head_id/head_name, category, gravity, status,
     station_name, district_id/district_name, plus typed lat/lon and dates.
-    Cached for the process lifetime (dataset is static for a demo run).
+    Cached until the TTL (forever for static CSVs; briefly for the live Data
+    Store so console edits appear).
     """
     cases = _read("CaseMaster")
     subheads = _read("CrimeSubHead")[["CrimeSubHeadID", "CrimeHeadID", "CrimeHeadName"]]
@@ -162,7 +190,7 @@ def accused_records() -> list[dict]:
     return recs
 
 
-@functools.lru_cache(maxsize=1)
+@timed_cache(_cache_ttl)
 def case_narratives() -> dict[int, str]:
     """CaseMasterID -> BriefFacts, for MO extraction (MO-002/#38).
 

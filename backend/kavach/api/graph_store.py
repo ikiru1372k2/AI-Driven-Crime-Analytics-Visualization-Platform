@@ -14,13 +14,15 @@ without changing the enforcement logic.
 
 from __future__ import annotations
 
-import functools
 import os
+import shutil
+import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from kavach.api.data import data_dir
+from kavach.api.data import _cache_ttl, _use_datastore, data_dir
+from kavach.api.ttl_cache import timed_cache
 from kavach.graph import (
     CrimeGraphEdge,
     CrimeGraphNode,
@@ -79,11 +81,32 @@ class GraphContext:
     projection_run_id: str
 
 
-@functools.lru_cache(maxsize=1)
+def _load_into(conn) -> None:
+    """Load the active source into the SQLite fixture.
+
+    CSV source loads straight from ``data_dir()``. Data Store source materialises
+    the tables to a temp dir first, so the CSV-based ingestion loader runs
+    unchanged, then cleans up.
+    """
+    if not _use_datastore():
+        load_dataset(data_dir(), _manifest_path(), conn)
+        return
+    from kavach.api import datastore  # lazy: CSV mode never imports it
+    from kavach.ingestion.loader import LOAD_ORDER
+
+    tmp = Path(tempfile.mkdtemp(prefix="kavach-ds-"))
+    try:
+        datastore.materialize_csvs(tmp, LOAD_ORDER)
+        load_dataset(tmp, _manifest_path(), conn)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@timed_cache(_cache_ttl)
 def _build() -> GraphContext:
     # served read-only from FastAPI worker threads after this build
     conn = connect(check_same_thread=False)
-    load_dataset(data_dir(), _manifest_path(), conn)
+    _load_into(conn)
     provenance = ProvenanceRepository(conn)
     projection = project_graph(conn, provenance)
     metrics_result = compute_metrics(conn, provenance)
