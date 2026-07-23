@@ -1,7 +1,13 @@
 /** Static config for the association graph view (colours, seed presets, lenses).
  *  Kept out of GraphView.tsx so the component stays under the source-size gate. */
 import type cytoscape from "cytoscape";
-import type { AssocFilters, GraphEdge, GraphNode, NodeType } from "../lib/graphApi";
+import type {
+  AssocFilters,
+  GraphEdge,
+  GraphNode,
+  NodeType,
+  PersonDetail,
+} from "../lib/graphApi";
 
 /** Node colours by type (status-neutral palette; classification colours
  *  are reserved for edges so inference-vs-fact stays unambiguous). Grouped by
@@ -174,6 +180,49 @@ export function buildGraphElements(
       },
     })),
   ];
+}
+
+/** Build a person-centered graph: the clicked accused/victim at the center with
+ *  one CASE node per case they're named on and a person->case edge each. The
+ *  cross-case link is a POTENTIAL_ASSOCIATION (matched by name+age+gender, so a
+ *  namesake is possible). Pure + extracted so GraphView stays under the gate. */
+export function buildPersonGraph(person: PersonDetail): {
+  nodes: Map<string, GraphNode>;
+  edges: Map<string, GraphEdge>;
+  centerId: string;
+} {
+  const type: NodeType = person.role === "accused" ? "ACCUSED_RECORD" : "VICTIM_RECORD";
+  const centerId = `${type}:${person.record_id}`;
+  const nodes = new Map<string, GraphNode>();
+  const edges = new Map<string, GraphEdge>();
+  nodes.set(centerId, {
+    node_id: centerId,
+    node_type: type,
+    entity_ref_id: person.record_id,
+    label: person.name ?? "(unnamed)",
+    depth: 0,
+  });
+  for (const c of person.cases) {
+    const caseNodeId = `CASE:${c.case_id}`;
+    nodes.set(caseNodeId, {
+      node_id: caseNodeId,
+      node_type: "CASE",
+      entity_ref_id: c.case_id,
+      label: c.crime_no ?? c.subhead_name ?? `Case ${c.case_id}`,
+      depth: 1,
+    });
+    edges.set(`${centerId}->${caseNodeId}`, {
+      edge_id: `${centerId}->${caseNodeId}`,
+      source: centerId,
+      target: caseNodeId,
+      relationship_type: "INVOLVED_IN",
+      weight: 1,
+      evidence_case_id: Number(c.case_id),
+      derivation: "matched by name+age+gender",
+      classification: "POTENTIAL_ASSOCIATION",
+    });
+  }
+  return { nodes, edges, centerId };
 }
 
 /** Whether a node offers "Navigate here". Places/charges/cases always do.

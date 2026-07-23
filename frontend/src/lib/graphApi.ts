@@ -217,6 +217,38 @@ export function fetchAssociations(
   return get(`/api/associations?${p}`);
 }
 
+/** One case a person is named on — a light FIR restatement (no graph metrics). */
+export interface PersonCase {
+  case_id: string;
+  crime_no: string | null;
+  subhead_name: string | null;
+  district_name: string | null;
+  registered_date: string | null;
+  status: string | null;
+}
+
+/** A clicked accused/victim: their own attributes (FACT) plus the cases sharing
+ *  the exact same name+age+gender (a POTENTIAL_ASSOCIATION — namesakes possible). */
+export interface PersonDetail {
+  role: "accused" | "victim";
+  record_id: string;
+  name: string | null;
+  age: number | null;
+  gender: string | null;
+  district_id: string | null;
+  district_name: string | null;
+  case_count: number;
+  cases: PersonCase[];
+}
+
+/** Fetch one accused/victim's detail + their other cases (the person-click panel). */
+export function fetchPerson(
+  role: "accused" | "victim",
+  recordId: string,
+): Promise<{ person: PersonDetail }> {
+  return get(`/api/persons/${role}/${encodeURIComponent(recordId)}`);
+}
+
 export function fetchClassifications(): Promise<ClassificationInfo[]> {
   return get(`/api/classifications`);
 }

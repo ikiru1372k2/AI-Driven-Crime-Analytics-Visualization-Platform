@@ -233,6 +233,105 @@ def accused_records() -> list[dict]:
     return recs
 
 
+#: light per-case fields returned inside a person's "other cases" list
+_PERSON_CASE_FIELDS = [
+    "CaseMasterID", "CrimeNo", "subhead_name", "district_name",
+    "registered_date", "status",
+]
+
+
+def _person_key(rec: dict) -> tuple[str, int | None, str | None]:
+    """The exact same-person match key: normalized name + age + gender.
+
+    There is NO id that spans cases (AccusedMasterID/VictimMasterID are unique
+    per record, and PersonID is unusable + ADR-003-forbidden), so a person is
+    linked across FIRs by exact name+age+gender. This is an inference, not a
+    fact — two different people can share all three (namesakes) — hence the
+    POTENTIAL_ASSOCIATION classification on the endpoint.
+    """
+    return ((rec.get("name") or "").strip().lower(), rec.get("age"), rec.get("gender"))
+
+
+@timed_cache(_cache_ttl)
+def _person_case_index() -> dict:
+    """(role, name, age, gender) -> the person's records across all cases.
+
+    Cheap O(n) group-by over the already-memoized accused/victim records — the
+    same-victim-name index pattern, extended to accused with age+gender. Primed
+    by the warmer; TTL keeps datastore edits fresh. Read-only to callers.
+    """
+    idx: dict[tuple, list[dict]] = {}
+    for role, records, idkey in (
+        ("accused", accused_records(), "accused_id"),
+        ("victim", victim_records(), "victim_id"),
+    ):
+        for r in records:
+            key = (role, *_person_key(r))
+            idx.setdefault(key, []).append(
+                {
+                    "record_id": r[idkey],
+                    "case_id": r["case_id"],
+                    "name": r["name"],
+                    "age": r["age"],
+                    "gender": r["gender"],
+                    "district_id": r["district_id"],
+                    "district_name": r["district_name"],
+                }
+            )
+    return idx
+
+
+def person_detail(role: str, record_id: str) -> dict | None:
+    """A person (accused/victim) and every case they appear in, or None.
+
+    Deliberately light (PERF-001): the clicked record's own attributes (a FACT
+    restatement) plus the cases sharing the same name+age+gender — a potential
+    association, never `resolve_identities()` (the O(n²) path). Cases are light
+    FIR restatements sorted by registration date.
+    """
+    role = role.lower()
+    if role == "accused":
+        records, idkey = accused_records(), "accused_id"
+    elif role == "victim":
+        records, idkey = victim_records(), "victim_id"
+    else:
+        return None
+    rid = str(record_id)
+    me = next((r for r in records if str(r[idkey]) == rid), None)
+    if me is None:
+        return None
+
+    members = _person_case_index().get((role, *_person_key(me)), [])
+    case_ids = {str(m["case_id"]) for m in members} | {str(me["case_id"])}
+
+    df = enriched_cases()
+    rows = df[df["CaseMasterID"].astype(str).isin(case_ids)][_PERSON_CASE_FIELDS].copy()
+    rows["registered_date"] = rows["registered_date"].dt.strftime("%Y-%m-%d")
+    rows = rows.sort_values("registered_date", na_position="last")
+    cases = [
+        {
+            "case_id": r["CaseMasterID"],
+            "crime_no": r["CrimeNo"],
+            "subhead_name": r["subhead_name"],
+            "district_name": r["district_name"],
+            "registered_date": r["registered_date"],
+            "status": r["status"],
+        }
+        for r in rows.where(rows.notna(), None).to_dict(orient="records")
+    ]
+    return {
+        "role": role,
+        "record_id": rid,
+        "name": me["name"],
+        "age": me["age"],
+        "gender": me["gender"],
+        "district_id": me["district_id"],
+        "district_name": me["district_name"],
+        "case_count": len(cases),
+        "cases": cases,
+    }
+
+
 @timed_cache(_cache_ttl)
 def case_narratives() -> dict[int, str]:
     """CaseMasterID -> BriefFacts, for MO extraction (MO-002/#38).

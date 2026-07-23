@@ -32,6 +32,9 @@ export interface CyParams {
   seedRef: { current: { type: NodeType; id: string } };
   onExpand: (type: NodeType, ref: string) => void;
   onOpenNode: (type: NodeType, ref: string) => void;
+  /** a person record (accused/victim) -> their detail + other cases, never the
+   *  old similar-people expansion. */
+  onOpenPerson: (role: "accused" | "victim", ref: string) => void;
   onEdgeTap: (edgeId: string) => void;
   onCanvasTap: () => void;
   onHover: (h: HoverInfo | null) => void;
@@ -100,6 +103,12 @@ export function initCytoscape(container: HTMLDivElement, p: CyParams): Core {
     const id = ev.target.id() as string;
     p.onHover(null);
     if (id === centralIdOf(p)) return;
+    // a person record always opens their detail + own cases (never the old
+    // similar-people expansion, which is unwired for now).
+    if (type === "ACCUSED_RECORD" || type === "VICTIM_RECORD") {
+      p.onOpenPerson(type === "ACCUSED_RECORD" ? "accused" : "victim", ref);
+      return;
+    }
     // an expandable hub always routes through expand(): first tap reveals its
     // related cases, a repeat tap just re-focuses/zooms (no detail popover).
     // Only leaf nodes (cases, non-variant people) open the detail card.

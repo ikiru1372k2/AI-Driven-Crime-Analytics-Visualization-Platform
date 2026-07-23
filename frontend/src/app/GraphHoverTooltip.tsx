@@ -4,11 +4,12 @@
 import type { HoverInfo } from "./graphCytoscape";
 
 export function GraphHoverTooltip({ hover }: { hover: HoverInfo }) {
-  const hint = hover.expandable
-    ? hover.type === "ACCUSED_RECORD" || hover.type === "VICTIM_RECORD"
-      ? "click to expand similar people"
-      : "click to expand related cases"
-    : "click to view details";
+  const hint =
+    hover.type === "ACCUSED_RECORD" || hover.type === "VICTIM_RECORD"
+      ? "click to view this person"
+      : hover.expandable
+        ? "click to expand related cases"
+        : "click to view details";
   return (
     <div className="graph-tooltip" style={{ left: hover.x, top: hover.y }} aria-hidden="true">
       <span className="tt-type">{hover.type.replace(/_/g, " ").toLowerCase()}</span>
