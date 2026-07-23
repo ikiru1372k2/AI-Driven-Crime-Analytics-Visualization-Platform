@@ -70,6 +70,26 @@ def _seed_dev_auth() -> None:
         seed_demo_assignments(role_repo())
 
 
+@app.on_event("startup")
+def _start_warmer() -> None:
+    """Start the background snapshot warmer (PERF-001).
+
+    A no-op in CSV mode; in Data Store mode it keeps an in-memory snapshot fresh
+    on a daemon thread so no request ever blocks on the ~30s cold Data Store read
+    (which exceeds AppSail's 30s HTTP limit and caused the timeout death-spiral).
+    """
+    from kavach.api import warmer
+
+    warmer.start()
+
+
+@app.on_event("shutdown")
+def _stop_warmer() -> None:
+    from kavach.api import warmer
+
+    warmer.stop()
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": __version__}
@@ -85,6 +105,21 @@ def health_deps() -> dict:
         except ImportError:
             deps[mod] = None
     return {"status": "ok", "dependencies": deps}
+
+
+@app.get("/health/snapshot")
+def health_snapshot() -> dict:
+    """Report the background warmer's published snapshot (PERF-001).
+
+    ``ready`` false in CSV mode is expected — the warmer only runs in Data Store
+    mode; CSV requests read the bundled files directly. In Data Store mode a
+    ``source: "datastore"`` snapshot means live data is being served off the
+    request path; ``source: "csv"`` means the warm-start bootstrap is still up
+    while the first live read completes.
+    """
+    from kavach.api import snapshot
+
+    return {"status": "ok", "snapshot": snapshot.status()}
 
 
 @app.get("/health/datastore")

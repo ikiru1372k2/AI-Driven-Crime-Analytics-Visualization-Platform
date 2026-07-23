@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from kavach.api import data, datastore
-from kavach.api.ttl_cache import timed_cache
+from kavach.api.ttl_cache import timed_cache, timed_cache_keyed
 
 
 @pytest.fixture(autouse=True)
@@ -171,6 +171,48 @@ def test_timed_cache_zero_ttl_recomputes_each_call():
         return calls["n"]
 
     assert build() == 1 and build() == 2
+
+
+# --- timed_cache_keyed decorator (per-args memoizer) ------------------------
+def test_timed_cache_keyed_caches_per_args():
+    calls = {"n": 0}
+
+    @timed_cache_keyed(lambda: float("inf"))
+    def build(a, b):
+        calls["n"] += 1
+        return (a, b, calls["n"])
+
+    assert build(1, 2) == (1, 2, 1)
+    assert build(1, 2) == (1, 2, 1)  # same args -> cached
+    assert build(3, 4) == (3, 4, 2)  # different args -> its own entry
+    assert build(1, 2) == (1, 2, 1)  # first entry still cached alongside
+
+
+def test_timed_cache_keyed_clear_drops_all_entries():
+    calls = {"n": 0}
+
+    @timed_cache_keyed(lambda: float("inf"))
+    def build(a):
+        calls["n"] += 1
+        return calls["n"]
+
+    build(1)
+    build(2)
+    assert calls["n"] == 2
+    build.cache_clear()
+    build(1)
+    assert calls["n"] == 3  # recomputed after clear
+
+
+def test_timed_cache_keyed_zero_ttl_recomputes():
+    calls = {"n": 0}
+
+    @timed_cache_keyed(lambda: 0)
+    def build(a):
+        calls["n"] += 1
+        return calls["n"]
+
+    assert build(1) == 1 and build(1) == 2  # ttl=0 disables caching
 
 
 # --- source selector in data.py --------------------------------------------

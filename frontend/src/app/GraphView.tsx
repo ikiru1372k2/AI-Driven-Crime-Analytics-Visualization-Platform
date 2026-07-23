@@ -17,13 +17,13 @@ import {
   fetchNodeDetail,
   fetchSubgraph,
   type AssocFilters,
-  type ClassificationInfo,
   type GraphEdge,
   type GraphNode,
   type NodeDetail,
   type NodeType,
   type Subgraph,
 } from "../lib/graphApi";
+import { useCachedQuery } from "../lib/queryCache";
 import { GraphControls } from "./GraphControls";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { GraphRail } from "./GraphRail";
@@ -53,7 +53,8 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [merged, setMerged] = useState<{ nodes: Map<string, GraphNode>; edges: Map<string, GraphEdge> }>(
     () => ({ nodes: new Map(), edges: new Map() }),
   );
-  const [legend, setLegend] = useState<ClassificationInfo[]>([]);
+  // Legend is tiny and static — cache it so tab revisits don't refetch (PERF-001).
+  const { data: legend = [] } = useCachedQuery("graph:classifications", fetchClassifications);
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [edgeDetail, setEdgeDetail] = useState<GraphEdge | null>(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -153,10 +154,6 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         resultCount: resultCountRef.current,
       });
     }
-  }, []);
-
-  useEffect(() => {
-    fetchClassifications().then(setLegend).catch(() => {});
   }, []);
 
   const load = useCallback(

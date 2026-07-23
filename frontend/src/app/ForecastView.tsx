@@ -13,8 +13,10 @@
  * (error / loading / unavailable), and the provenance footer. The hero band and
  * ladder live in sibling components to keep every file well under the size gate.
  */
-import { useEffect, useState } from "react";
-import { fetchRisk, type RiskResponse } from "../lib/api";
+import { useState } from "react";
+import { fetchRisk } from "../lib/api";
+import { useCachedQuery } from "../lib/queryCache";
+import { Loading } from "./Loading";
 import { ForecastHero } from "./ForecastHero";
 import { RiskLadder, type LadderFilter } from "./RiskLadder";
 
@@ -23,25 +25,16 @@ interface Props {
 }
 
 export function ForecastView({ onOpenCase }: Props) {
-  const [data, setData] = useState<RiskResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Cached at module scope so re-entering the tab reuses the last forecast
+  // instead of re-calling the live QuickML path (PERF-001).
+  const { data, error } = useCachedQuery("risk:30", () => fetchRisk(30));
   const [filter, setFilter] = useState<LadderFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchRisk(30)
-      .then((r) => !cancelled && setData(r))
-      .catch((e) => !cancelled && setError(String(e)));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   if (error) {
     return (
       <div className="fc-body">
-        <div className="empty">Backend unreachable — {error}</div>
+        <div className="empty">Backend unreachable — {String(error)}</div>
       </div>
     );
   }
@@ -49,9 +42,7 @@ export function ForecastView({ onOpenCase }: Props) {
   if (!data) {
     return (
       <div className="fc-body">
-        <p className="muted" style={{ padding: "2rem" }}>
-          Loading forecast…
-        </p>
+        <Loading label="Loading forecast" rows={6} />
       </div>
     );
   }

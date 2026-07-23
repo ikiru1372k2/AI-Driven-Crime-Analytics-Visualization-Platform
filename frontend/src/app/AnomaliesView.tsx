@@ -16,8 +16,10 @@
  * strip and the provenance footer. The queue itself lives in AnomalyList so every
  * file stays well under the size gate. All data is SYNTHETIC (ADR-011).
  */
-import { useEffect, useState } from "react";
-import { fetchAnomalies, type AnomaliesResponse } from "../lib/api";
+import { useState } from "react";
+import { fetchAnomalies } from "../lib/api";
+import { useCachedQuery } from "../lib/queryCache";
+import { Loading } from "./Loading";
 import { AnomalyList, type FlagFilter } from "./AnomalyList";
 
 interface Props {
@@ -25,25 +27,16 @@ interface Props {
 }
 
 export function AnomaliesView({ onOpenCase }: Props) {
-  const [data, setData] = useState<AnomaliesResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Cached at module scope: switching tabs and back reuses this instantly
+  // instead of re-scanning (PERF-001).
+  const { data, error } = useCachedQuery("anomalies:30", () => fetchAnomalies(30));
   const [filter, setFilter] = useState<FlagFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchAnomalies(30)
-      .then((r) => !cancelled && setData(r))
-      .catch((e) => !cancelled && setError(String(e)));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   if (error) {
     return (
       <div className="fl-body">
-        <div className="empty">Backend unreachable — {error}</div>
+        <div className="empty">Backend unreachable — {String(error)}</div>
       </div>
     );
   }
@@ -51,9 +44,7 @@ export function AnomaliesView({ onOpenCase }: Props) {
   if (!data) {
     return (
       <div className="fl-body">
-        <p className="muted" style={{ padding: "2rem" }}>
-          Scanning for anomalies…
-        </p>
+        <Loading label="Scanning for anomalies" rows={6} />
       </div>
     );
   }

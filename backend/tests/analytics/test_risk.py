@@ -144,3 +144,43 @@ def test_numbers_safe_guard():
     assert _numbers_safe("Around 34 cases expected within 30 days, up 20 percent.", facts)
     assert not _numbers_safe("About 50 cases next 30 days.", facts)  # 50 not in facts
     assert _numbers_safe("Activity is rising in this district.", facts)  # no numbers
+
+
+# --- production-path memoization (PERF-001) ---------------------------------
+def test_production_path_is_memoized_and_copy_safe(planted, monkeypatch):
+    """With no injected client the forecast is memoized per window (CSV TTL is
+    infinite), and the returned dict is a shallow copy so a caller mutating it
+    (as the route does, adding an envelope) never corrupts the cached result."""
+    from kavach.analytics.risk import engine
+
+    engine._forecast_cached.cache_clear()
+    calls = {"n": 0}
+    real_impl = engine._forecast_impl
+
+    def counting_impl(window_days, client):
+        calls["n"] += 1
+        return real_impl(window_days, client)
+
+    monkeypatch.setattr(engine, "_forecast_impl", counting_impl)
+
+    first = engine.forecast_area_risk()
+    second = engine.forecast_area_risk()
+    assert calls["n"] == 1, "second production call must reuse the cached forecast"
+    assert first is not second, "each call returns a fresh shallow copy"
+
+    first["intelligence"] = "route mutation"  # mimic the route's envelope write
+    assert "intelligence" not in engine.forecast_area_risk(), "cache must stay clean"
+    engine._forecast_cached.cache_clear()
+
+
+def test_injected_client_bypasses_the_cache(planted):
+    """A test/route passing a client always runs fresh — no cross-call leakage."""
+    from kavach.analytics.risk import engine
+
+    engine._forecast_cached.cache_clear()
+    a = forecast_area_risk(quickml=FakeQuickML(predictor=lambda r: 5))
+    b = forecast_area_risk(quickml=FakeQuickML(predictor=lambda r: 50))
+    # different injected models -> different numbers, so the cache was not consulted
+    assert [d["expected_count"] for d in a["districts"]] != [
+        d["expected_count"] for d in b["districts"]
+    ]

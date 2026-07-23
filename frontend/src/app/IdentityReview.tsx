@@ -8,25 +8,24 @@ import { useEffect, useMemo, useState } from "react";
 import {
   fetchIdentities,
   fetchIdentityDetail,
-  type IdentitiesResponse,
   type IdentityCandidate,
 } from "../lib/api";
+import { useCachedQuery } from "../lib/queryCache";
+import { Loading, Spinner } from "./Loading";
 import { fetchDecisions, postDecision } from "../lib/evidenceApi";
 
 type Decision = "accepted" | "rejected";
 
 export function IdentityReview() {
-  const [data, setData] = useState<IdentitiesResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Cached at module scope so re-entering the tab reuses the queue instantly
+  // (PERF-001). Per-candidate evidence stays lazy — fetched on expand inside
+  // each card, also cached — since it is 88% of a 1.1 MB response.
+  const { data, error } = useCachedQuery("identities", fetchIdentities);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
-  // Per-candidate evidence is fetched on expand: shipping it for all 512
-  // candidates was 88% of a 1.1 MB response and made the queue slow to load.
-  const [details, setDetails] = useState<Record<string, IdentityCandidate>>({});
 
   useEffect(() => {
-    fetchIdentities().then(setData).catch((e) => setError(String(e)));
     // loop closure (design review P0): accept/reject survives reload,
     // each action lands in the append-only audit trail (PROV-003)
     fetchDecisions()
@@ -51,8 +50,8 @@ export function IdentityReview() {
     return list.slice(0, 60);
   }, [data, query]);
 
-  if (error) return <div className="idr"><div className="empty">Backend unreachable — {error}</div></div>;
-  if (!data) return <div className="idr"><div className="empty">Resolving identities…</div></div>;
+  if (error) return <div className="idr"><div className="empty">Backend unreachable — {String(error)}</div></div>;
+  if (!data) return <div className="idr"><Loading label="Resolving identities" rows={6} /></div>;
 
   const decide = (id: string, d: Decision) => {
     const cleared = decisions[id] === d;
@@ -99,17 +98,8 @@ export function IdentityReview() {
             key={c.cluster_id}
             c={c}
             open={expanded === c.cluster_id}
-            detail={details[c.cluster_id]}
             decision={decisions[c.cluster_id]}
-            onToggle={() => {
-              const next = expanded === c.cluster_id ? null : c.cluster_id;
-              setExpanded(next);
-              if (next && !details[next]) {
-                fetchIdentityDetail(next)
-                  .then((d) => setDetails((prev) => ({ ...prev, [next]: d })))
-                  .catch(() => {});
-              }
-            }}
+            onToggle={() => setExpanded(expanded === c.cluster_id ? null : c.cluster_id)}
             onDecide={(d) => decide(c.cluster_id, d)}
           />
         ))}
@@ -122,19 +112,23 @@ export function IdentityReview() {
 function IdentityCard({
   c,
   open,
-  detail,
   decision,
   onToggle,
   onDecide,
 }: {
   c: IdentityCandidate;
   open: boolean;
-  /** evidence fetched on expand; undefined until it arrives */
-  detail?: IdentityCandidate;
   decision?: Decision;
   onToggle: () => void;
   onDecide: (d: Decision) => void;
 }) {
+  // Evidence is fetched only once the row is expanded, then cached at module
+  // scope so re-expanding (or revisiting the tab) is instant (PERF-001).
+  const { data: detail } = useCachedQuery(
+    `identity:${c.cluster_id}`,
+    () => fetchIdentityDetail(c.cluster_id),
+    { enabled: open },
+  );
   const crossDistrict = c.districts.length > 1;
   const members = detail?.members;
   const signals = detail?.signals;
@@ -160,7 +154,7 @@ function IdentityCard({
           </div>
 
           <div className="section-label">Records</div>
-          {!members && <div className="muted small">loading evidence…</div>}
+          {!members && <Spinner label="loading evidence…" />}
           <div className="id-members">
             {(members ?? []).map((m) => (
               <div className="id-member" key={m.accused_id}>
