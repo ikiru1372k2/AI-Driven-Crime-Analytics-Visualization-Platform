@@ -25,7 +25,6 @@ import { HotspotDetail } from "./HotspotDetail";
 import { Overview } from "./Overview";
 import { IdentityReview } from "./IdentityReview";
 import { GraphView, type GraphSeed } from "./GraphView";
-import { EvidenceView } from "./EvidenceView";
 import { MoView } from "./MoView";
 import { ForecastView } from "./ForecastView";
 import { AnomaliesView } from "./AnomaliesView";
@@ -161,15 +160,6 @@ export function App() {
 
       {view === "anomalies" && (
         <AnomaliesView
-          onOpenCase={(caseId) => {
-            setGraphSeed({ type: "CASE", id: String(caseId) });
-            setView("graph");
-          }}
-        />
-      )}
-
-      {view === "evidence" && (
-        <EvidenceView
           onOpenCase={(caseId) => {
             setGraphSeed({ type: "CASE", id: String(caseId) });
             setView("graph");

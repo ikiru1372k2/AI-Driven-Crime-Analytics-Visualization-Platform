@@ -4,7 +4,6 @@
 import type { ClassificationInfo, NodeType, Subgraph } from "../lib/graphApi";
 import { EDGE_STYLE, NODE_COLORS, NODE_LEGEND, SEED_EXAMPLES, SEED_TYPES } from "./graphConfig";
 import type { GraphSeed } from "./GraphView";
-import { Spinner } from "./Loading";
 
 interface Props {
   seedType: NodeType;
@@ -120,7 +119,6 @@ export function GraphRail({
       )}
 
       {error && <p className="error">{error}</p>}
-      {loading && <Spinner label="loading subgraph…" />}
     </div>
   );
 }

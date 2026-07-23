@@ -234,22 +234,31 @@ _HEAVY_CANDIDATE_FIELDS = ("members", "signals")
 def get_identities(
     district_id: int | None = Query(default=None),
     min_cluster_size: int = Query(default=2, ge=2, le=20),
+    limit: int = Query(default=60, ge=1, le=2000, description="page size"),
+    offset: int = Query(default=0, ge=0, description="page offset into the candidate queue"),
     detail: bool = Query(
         default=False,
         description="include member records + signals for every candidate "
         "(large; the review queue fetches these per candidate instead)",
     ),
 ) -> dict:
-    """Candidate cross-FIR identities for human review (explainable, no auto-merge)."""
+    """Candidate cross-FIR identities for human review (explainable, no auto-merge).
+
+    Paginated (PERF-001): the queue is served one page at a time so the client
+    never pulls the whole candidate list. ``candidate_count`` is the full total.
+    """
     result = resolve_identities(district_id=district_id, min_cluster_size=min_cluster_size)
     if detail:
         return result
+    page = result["candidates"][offset:offset + limit]
     return {
         **result,
         "candidates": [
-            {k: v for k, v in c.items() if k not in _HEAVY_CANDIDATE_FIELDS}
-            for c in result["candidates"]
+            {k: v for k, v in c.items() if k not in _HEAVY_CANDIDATE_FIELDS} for c in page
         ],
+        "offset": offset,
+        "limit": limit,
+        "returned": len(page),
         "detail_omitted": True,
     }
 

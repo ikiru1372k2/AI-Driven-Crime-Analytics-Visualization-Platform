@@ -906,6 +906,22 @@ select:focus-visible {
   inset: 0;
   background: var(--page);
 }
+/* Loading sits on the graph stage (right), not the rail (left): the subgraph
+   is what's arriving, so the affordance belongs over the canvas (PERF-001). */
+.graph-loading {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+}
 .graph-nodelist {
   list-style: none;
   margin: 0;
@@ -1547,92 +1563,6 @@ select:focus-visible {
 }
 
 /* ============================================================
-   Evidence & Provenance browser (design review 1h)
-   ============================================================ */
-.evidence-body {
-  display: grid;
-  grid-template-columns: 320px 1fr 300px;
-  min-height: 0;
-  height: calc(100vh - 96px);
-}
-.ev-rail, .ev-audit {
-  background: var(--surface-1);
-  overflow-y: auto;
-  padding: 1rem;
-}
-.ev-rail { border-right: 1px solid var(--hairline); }
-.ev-audit { border-left: 1px solid var(--hairline); }
-.ev-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
-.ev-run {
-  width: 100%;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: var(--surface-2);
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  padding: 0.55rem 0.65rem;
-  cursor: pointer;
-  color: var(--ink);
-}
-.ev-run.active { border-color: var(--series-1); }
-.ev-type { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; }
-.ev-type.big { font-size: 0.8rem; }
-.ev-run-meta { font-size: 0.75rem; color: var(--ink-2); }
-.ev-status {
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
-  align-self: flex-start;
-  border-radius: 999px;
-  padding: 0 0.4rem;
-  border: 1px solid var(--hairline);
-  color: var(--muted);
-}
-.ev-status.completed { color: var(--good); border-color: var(--good); }
-.ev-status.failed { color: var(--critical); border-color: var(--critical); }
-.ev-main { overflow-y: auto; padding: 1.2rem 1.4rem; }
-.ev-method-card {
-  background: var(--surface-1);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  padding: 1rem 1.1rem;
-  margin-bottom: 1rem;
-}
-.ev-method-card header { display: flex; justify-content: space-between; margin-bottom: 0.6rem; }
-.ev-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
-.ev-item {
-  background: var(--surface-1);
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  padding: 0.7rem 0.85rem;
-}
-.ev-item-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
-.ev-ref { font-size: 0.78rem; color: var(--ink); overflow-wrap: anywhere; }
-.ev-factors { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 0.45rem; }
-.ev-factor {
-  font-size: 0.72rem;
-  color: var(--ink-2);
-  border: 1px solid var(--hairline);
-  border-radius: 4px;
-  padding: 0.1rem 0.4rem;
-}
-.ev-firs { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
-.fir-chip {
-  background: var(--surface-2);
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  color: var(--series-1);
-  font-size: 0.72rem;
-  padding: 0.15rem 0.55rem;
-  cursor: pointer;
-}
-.fir-chip:hover { border-color: var(--series-1); }
-.ev-activity { list-style: none; margin: 0 0 0.8rem; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
-.ev-activity li { display: grid; grid-template-columns: 12px 1fr; gap: 0.4rem; font-size: 0.76rem; color: var(--ink-2); }
-.ev-act-when { grid-column: 2; font-size: 0.66rem; color: var(--muted); }
-
-/* ============================================================
    Time scrubber (design review 1g) — spatiotemporal playback
    ============================================================ */
 .scrubber {
@@ -1676,16 +1606,6 @@ select:focus-visible {
   background: var(--surface-2);
 }
 .scrub-label { margin-left: auto; font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
-
-/* evidence browser responsive collapse */
-@media (max-width: 1100px) {
-  .evidence-body {
-    grid-template-columns: 1fr;
-    height: auto;
-  }
-  .ev-rail { border-right: 0; border-bottom: 1px solid var(--hairline); }
-  .ev-audit { border-left: 0; border-top: 1px solid var(--hairline); }
-}
 
 /* ---- association graph: View + Filter controls (top-right) ---- */
 .gc {
@@ -1789,12 +1709,6 @@ select:focus-visible {
   font-size: 0.8rem;
   padding: 0.45rem 0.7rem;
   cursor: pointer;
-}
-
-/* Decision-trail empty state has no status dot, so it must not sit in the
-   narrow first grid column (it wrapped one word per line). */
-.ev-activity li.muted {
-  display: block;
 }
 
 /* ============================================================

@@ -168,14 +168,16 @@ def case_records(
     return out.where(out.notna(), None).to_dict(orient="records")
 
 
+@timed_cache(_cache_ttl)
 def accused_records() -> list[dict]:
     """Accused persons joined to their case's district, for entity resolution.
 
     Deliberately does NOT expose PersonID: identity must be *discovered* from
     attributes across FIRs, never joined on the per-record PersonID (ADR-003).
 
-    Not memoized: reads run against the (already cached) enriched_cases + a fast
-    _read, and the heavy consumer — resolve_identities — is itself cached/warmed.
+    Memoized (PERF-001): three engines (association, anomaly, entity) rebuild
+    this per request otherwise. The warmer primes it; the TTL keeps datastore
+    edits fresh (inf for CSV). Callers treat the result as read-only.
     """
     cols = ["AccusedMasterID", "CaseMasterID", "AccusedName", "AgeYear", "GenderID"]
     acc = _read("Accused")[cols]
@@ -219,8 +221,12 @@ def case_narratives() -> dict[int, str]:
     return out
 
 
+@timed_cache(_cache_ttl)
 def victim_records() -> list[dict]:
-    """Victim persons joined to their case's district (for association search)."""
+    """Victim persons joined to their case's district (for association search).
+
+    Memoized (PERF-001) like accused_records; result is read-only to callers.
+    """
     cols = ["VictimMasterID", "CaseMasterID", "VictimName", "AgeYear", "GenderID"]
     vic = _read("Victim")[cols]
     cases = enriched_cases()[["CaseMasterID", "district_id", "district_name"]]

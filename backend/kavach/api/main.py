@@ -117,9 +117,9 @@ def health_snapshot() -> dict:
     request path; ``source: "csv"`` means the warm-start bootstrap is still up
     while the first live read completes.
     """
-    from kavach.api import snapshot
+    from kavach.api import snapshot, warmer
 
-    return {"status": "ok", "snapshot": snapshot.status()}
+    return {"status": "ok", "snapshot": snapshot.status(), "warmer": warmer.status()}
 
 
 @app.get("/health/datastore")

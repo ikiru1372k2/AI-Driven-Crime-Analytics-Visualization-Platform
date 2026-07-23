@@ -16,7 +16,8 @@ export interface HoverInfo {
   y: number;
   label: string;
   type: string;
-  expand: number;
+  /** whether tapping the node reveals more (no count — PERF-001). */
+  expandable: boolean;
 }
 
 export interface CyParams {
@@ -45,14 +46,8 @@ function centralIdOf(p: CyParams): string {
 /** Create a Cytoscape instance for the merged graph and bind all events.
  *  Caller owns the returned instance and must `.destroy()` it. */
 export function initCytoscape(container: HTMLDivElement, p: CyParams): Core {
-  // View projection + degree sizing + expandable badges (see buildGraphElements)
-  const elements = buildGraphElements(
-    p.merged,
-    p.viewDims,
-    p.expandable,
-    p.expandedSet,
-    p.seedNodeId,
-  );
+  // View projection + degree sizing (see buildGraphElements; nodes carry no counts)
+  const elements = buildGraphElements(p.merged, p.viewDims, p.seedNodeId);
   const cy = cytoscape({
     container,
     elements,
@@ -132,7 +127,7 @@ export function initCytoscape(container: HTMLDivElement, p: CyParams): Core {
         y: rp.y,
         label: ev.target.data("label") as string,
         type: ev.target.data("type") as string,
-        expand: p.expandedSet.has(id) ? 0 : p.expandable[id] ?? 0,
+        expandable: !p.expandedSet.has(id) && (p.expandable[id] ?? 0) > 0,
       });
     }
   });

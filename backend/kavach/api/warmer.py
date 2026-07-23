@@ -39,6 +39,17 @@ log = logging.getLogger("kavach.warmer")
 _thread: threading.Thread | None = None
 _stop = threading.Event()
 
+#: last prime outcome per step — {label: "1.2s" | "ERROR: ..."} plus a run ts.
+#: Exposed via /health/snapshot so we can SEE whether the daemon actually
+#: primed on AppSail (its background thread can be starved between requests).
+_prime_log: dict[str, object] = {}
+
+
+def status() -> dict:
+    """What the warmer has done — for /health/snapshot diagnostics (PERF-001)."""
+    return {"enabled": _enabled(), "datastore": _use_datastore(),
+            "alive": bool(_thread and _thread.is_alive()), "last_prime": dict(_prime_log)}
+
 
 def _use_datastore() -> bool:
     return settings.data_source.strip().lower() == "datastore"
@@ -76,6 +87,7 @@ def _build_from_datastore() -> dict:
 def _clear_caches() -> None:
     """Drop the memoized builders so they recompute against fresh data."""
     from kavach.analytics.anomaly import engine as anomaly_engine
+    from kavach.analytics.association import engine as association_engine
     from kavach.analytics.entity import resolve_identities
     from kavach.analytics.risk import engine as risk_engine
 
@@ -86,6 +98,7 @@ def _clear_caches() -> None:
         if clear:
             clear()
     resolve_identities.cache_clear()
+    association_engine.cache_clear()  # people/rows/same-suspect/same-victim indices
     anomaly_engine._detect_cached.cache_clear()
     risk_engine._forecast_cached.cache_clear()
     graph_store.reset_graph_context()
@@ -119,9 +132,13 @@ def _prime() -> None:
         try:
             t = time.time()
             fn()
-            log.info("warmed %s in %.1fs", label, time.time() - t)
-        except Exception:  # noqa: BLE001 - never let the warmer thread die
+            dt = time.time() - t
+            _prime_log[label] = f"{dt:.1f}s"
+            log.info("warmed %s in %.1fs", label, dt)
+        except Exception as exc:  # noqa: BLE001 - never let the warmer thread die
+            _prime_log[label] = f"ERROR: {type(exc).__name__}: {exc}"
             log.exception("warming %s failed", label)
+    _prime_log["ran_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _publish(tables: dict, source: str) -> None:

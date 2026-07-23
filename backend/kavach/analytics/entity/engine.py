@@ -150,19 +150,14 @@ class _Union:
 
 
 @functools.lru_cache(maxsize=8)
-def resolve_identities(*, district_id: int | None = None, min_cluster_size: int = 2) -> dict:
-    """Discover candidate cross-FIR identities from accused attributes.
+def _resolve_cached(district_id: int | None, min_cluster_size: int) -> dict:
+    """Positional-arg cache impl behind ``resolve_identities`` (see wrapper).
 
-    Returns identity clusters (size >= ``min_cluster_size``) for human review -
-    each with its member records, a confidence, and the pairwise signal
-    breakdown. Nothing is auto-merged (human-in-the-loop, #49).
-
-    Cached per (district_id, min_cluster_size): the pairwise comparison runs
-    over every accused record and took ~13s per request on the deployed demo,
-    which reads as a hung screen. The dataset is static for a run (ADR-011),
-    same assumption as data.enriched_cases(). Callers must not mutate the
-    returned dict; tests that switch KAVACH_DATA_DIR call
-    resolve_identities.cache_clear() alongside enriched_cases.cache_clear().
+    Keyed positionally so every caller — the warmer's ``resolve_identities()``,
+    the route's ``resolve_identities(district_id=None, min_cluster_size=2)`` and
+    association's same-suspect index — share ONE cache entry. Keying on keyword
+    args (the old bug) made ``f()`` and ``f(district_id=None)`` distinct keys, so
+    the warmer's prime was never reused and the route recomputed cold → 408.
     """
     records = data.accused_records()
     if district_id is not None:
@@ -251,3 +246,23 @@ def resolve_identities(*, district_id: int | None = None, min_cluster_size: int 
         "candidate_count": len(out),
         "candidates": out,
     }
+
+
+def resolve_identities(*, district_id: int | None = None, min_cluster_size: int = 2) -> dict:
+    """Discover candidate cross-FIR identities from accused attributes.
+
+    Returns identity clusters (size >= ``min_cluster_size``) for human review -
+    each with its member records, a confidence, and the pairwise signal
+    breakdown. Nothing is auto-merged (human-in-the-loop, #49).
+
+    Thin keyword wrapper over the positionally-cached ``_resolve_cached`` so all
+    callers hit the same cache entry (the pairwise comparison runs over every
+    accused record and is the expensive step; the dataset is static per run,
+    ADR-011). Tests/warmer that switch data call ``resolve_identities.cache_clear()``.
+    """
+    return _resolve_cached(district_id, min_cluster_size)
+
+
+#: expose the underlying cache controls on the public name (warmer/tests use it)
+resolve_identities.cache_clear = _resolve_cached.cache_clear
+resolve_identities.cache_info = _resolve_cached.cache_info

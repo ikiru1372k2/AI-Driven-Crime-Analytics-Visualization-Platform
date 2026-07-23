@@ -27,6 +27,7 @@ import { useCachedQuery } from "../lib/queryCache";
 import { GraphControls } from "./GraphControls";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { GraphRail } from "./GraphRail";
+import { Spinner } from "./Loading";
 import { ALL_VIEW_KEYS, canNavigateNode, DEFAULT_SEED_CASE } from "./graphConfig";
 import { initCytoscape, type HoverInfo } from "./graphCytoscape";
 import { buildPreFilter, type SeedAttrs } from "./graphPreFilter";
@@ -61,7 +62,8 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const [viewDims, setViewDims] = useState<Set<string>>(() => new Set(ALL_VIEW_KEYS));
   const [filters, setFilters] = useState<AssocFilters>({});
   const [resultCount, setResultCount] = useState<number | null>(null);
-  // related-case count per entity node_id (overview hint / node badge)
+  // expandable flag per entity node_id (1 = has more to reveal). No counts
+  // (PERF-001) — it only gates whether a tap expands vs opens details.
   const [expandable, setExpandable] = useState<Record<string, number>>({});
   // whether we've drilled into an entity (View belongs to the overview only)
   const [drilled, setDrilled] = useState(false);
@@ -168,15 +170,18 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         let gEdges: GraphEdge[];
         if (type === "CASE") {
           // OVERVIEW: the seed case + its own entities only (no associated
-          // cases yet). Each entity carries an `expandable` count; clicking it
-          // pulls its related cases (progressive, like zooming a map). Filters
-          // belong to the expanded level, so the overview ignores them.
+          // cases yet). Each entity is flagged `expandable` (no counts —
+          // PERF-001); clicking it pulls its related cases (progressive, like
+          // zooming a map). Filters belong to the expanded level, so the
+          // overview ignores them.
           const a = await fetchAssociations(id);
           gNodes = a.nodes;
           gEdges = a.edges;
           setSubgraph(null);
           setExpandable(a.expandable ?? {});
-          setResultCount(a.total_related);
+          // the overview computes no related-case universe (PERF-001) — the
+          // stats bar only appears once an entity is expanded.
+          setResultCount(null);
           // remember the seed's attributes so expansions can pre-filter to its
           // crime type (see preFilterFor / expand)
           seedAttrsRef.current = a.seed
@@ -233,10 +238,14 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         offset: pg * PAGE_SIZE,
       });
       setExpandable(ex.expandable ?? {});
-      const isAccused = focus.startsWith("ACCUSED_RECORD:");
+      // Accused OR victim expansion resolves the SAME person's other records
+      // (same-suspect / same-victim), both drawn as SAME_IDENTITY edges. Place
+      // and charge expansions instead surface related cases.
+      const isPerson =
+        focus.startsWith("ACCUSED_RECORD:") || focus.startsWith("VICTIM_RECORD:");
       const nodes = new Map<string, GraphNode>();
       const edges = new Map<string, GraphEdge>();
-      if (isAccused) {
+      if (isPerson) {
         // the focus person and the records SAME_IDENTITY links to it — nothing else
         const people = new Set<string>([focus]);
         ex.edges.forEach((e) => {
@@ -468,7 +477,10 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const focusLabel = activeFocusRef.current
     ? merged.nodes.get(activeFocusRef.current)?.label ?? ""
     : "";
-  const focusIsAccused = activeFocusRef.current?.startsWith("ACCUSED_RECORD:") ?? false;
+  const focusIsPerson =
+    activeFocusRef.current?.startsWith("ACCUSED_RECORD:") ||
+    activeFocusRef.current?.startsWith("VICTIM_RECORD:") ||
+    false;
   // the expanded entity's type — its own attribute is redundant to filter on
   // (every result already shares it), so that field is hidden in the Filter
   const focusType = (activeFocusRef.current?.split(":")[0] as NodeType | undefined) ?? null;
@@ -514,7 +526,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         {drilled && pageInfo && (
           <div className="graph-stats" role="status">
             {focusLabel ? `${focusLabel} · ` : ""}
-            {pageInfo.total} {focusIsAccused ? "same-person record" : "case"}
+            {pageInfo.total} {focusIsPerson ? "same-person record" : "case"}
             {pageInfo.total === 1 ? "" : "s"}
             {pageInfo.total > PAGE_SIZE
               ? ` (showing ${pageInfo.offset + 1}–${pageInfo.offset + pageInfo.count})`
@@ -530,15 +542,20 @@ export function GraphView({ seed, onSeed, theme }: Props) {
             <span className="tt-type">{hover.type.replace(/_/g, " ").toLowerCase()}</span>
             <span className="tt-label">{hover.label}</span>
             <span className="tt-hint">
-              {hover.expand > 0
+              {hover.expandable
                 ? hover.type === "ACCUSED_RECORD" || hover.type === "VICTIM_RECORD"
-                  ? `click to expand ${hover.expand} similar person${hover.expand > 1 ? "s" : ""}`
-                  : `click to expand ${hover.expand} related case${hover.expand > 1 ? "s" : ""}`
+                  ? "click to expand similar people"
+                  : "click to expand related cases"
                 : "click to view details"}
             </span>
           </div>
         )}
         <div ref={containerRef} className="graph-canvas" aria-label="Association graph canvas" />
+        {loading && (
+          <div className="graph-loading" role="status">
+            <Spinner label="loading…" />
+          </div>
+        )}
 
         {drilled && pageInfo && pageInfo.total > PAGE_SIZE && (
           <div className="graph-pager" role="navigation" aria-label="Case pages">
