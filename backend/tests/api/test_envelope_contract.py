@@ -40,20 +40,36 @@ ENVELOPED_ROUTES = [
 ]
 
 
+#: data builders that memoize the source tables — must be cleared alongside
+#: enriched_cases so they all rebuild against THIS fixture's dataset (else a
+#: prior module's cached rows leak in; person_detail mixes the two and fails).
+def _clear_data_caches() -> None:
+    for name in (
+        "enriched_cases",
+        "accused_records",
+        "victim_records",
+        "_person_case_index",
+    ):
+        fn = getattr(data, name, None)
+        clear = getattr(fn, "cache_clear", None)
+        if clear:
+            clear()
+
+
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     out = tmp_path_factory.mktemp("envelope_synth")
     generate_dataset(out, MANIFEST, seed=20260718, background_cases=600)
     prev = os.environ.get("KAVACH_DATA_DIR")
     os.environ["KAVACH_DATA_DIR"] = str(out)
-    data.enriched_cases.cache_clear()
+    _clear_data_caches()
     with TestClient(app) as c:
         yield c
     if prev is None:
         os.environ.pop("KAVACH_DATA_DIR", None)
     else:
         os.environ["KAVACH_DATA_DIR"] = prev
-    data.enriched_cases.cache_clear()
+    _clear_data_caches()
 
 
 # -- serializer units ----------------------------------------------------
@@ -138,6 +154,39 @@ def test_case_detail_is_basic_and_enveloped(client):
 
     missing = client.get("/api/cases/999999999")
     assert missing.status_code == 404
+
+
+def test_person_detail_lists_other_cases(client):
+    """Clicking an accused/victim returns their own attributes (a FACT) plus the
+    cases sharing the exact same name+age+gender — a POTENTIAL_ASSOCIATION (no id
+    spans cases; namesakes possible). Pick a person who recurs so the cross-case
+    list is exercised; bad ids/roles fail cleanly."""
+    # find any accused whose (name, age, gender) appears in more than one case
+    idx = data._person_case_index()
+    multi = next(
+        members for key, members in idx.items()
+        if key[0] == "accused" and len({m["case_id"] for m in members}) > 1
+    )
+    record_id = multi[0]["record_id"]
+    expected_cases = len({m["case_id"] for m in multi})
+
+    resp = client.get(f"/api/persons/accused/{record_id}")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    person = body["person"]
+    assert person["role"] == "accused"
+    assert str(person["record_id"]) == str(record_id)
+    for k in ("name", "age", "gender", "district_name", "case_count", "cases"):
+        assert k in person
+    assert person["case_count"] == expected_cases >= 2
+    for c in person["cases"]:
+        for k in ("case_id", "crime_no", "subhead_name", "district_name", "status"):
+            assert k in c
+    # cross-case linkage is an inference, not a fact
+    assert body["intelligence"]["classification"] == "POTENTIAL_ASSOCIATION"
+
+    assert client.get("/api/persons/accused/999999999").status_code == 404
+    assert client.get("/api/persons/suspect/1").status_code == 422  # invalid role
 
 
 # -- router contract -----------------------------------------------------

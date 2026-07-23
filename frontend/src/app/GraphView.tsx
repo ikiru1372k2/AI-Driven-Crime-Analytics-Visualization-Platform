@@ -16,6 +16,7 @@ import {
   fetchCaseBasic,
   fetchClassifications,
   fetchNodeDetail,
+  fetchPerson,
   fetchSubgraph,
   type AssocFilters,
   type CaseBasic,
@@ -23,6 +24,7 @@ import {
   type GraphNode,
   type NodeDetail,
   type NodeType,
+  type PersonDetail,
   type Subgraph,
 } from "../lib/graphApi";
 import { useCachedQuery } from "../lib/queryCache";
@@ -33,6 +35,7 @@ import { GraphRail } from "./GraphRail";
 import { Spinner } from "./Loading";
 import {
   ALL_VIEW_KEYS,
+  buildPersonGraph,
   canNavigateNode,
   DEFAULT_SEED_CASE,
   expandLoadingMessage,
@@ -67,6 +70,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const { data: legend = [] } = useCachedQuery("graph:classifications", fetchClassifications);
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [caseBasic, setCaseBasic] = useState<CaseBasic | null>(null);
+  const [person, setPerson] = useState<PersonDetail | null>(null);
   const [edgeDetail, setEdgeDetail] = useState<GraphEdge | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [viewDims, setViewDims] = useState<Set<string>>(() => new Set(ALL_VIEW_KEYS));
@@ -157,6 +161,14 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     }
   }, []);
 
+  // drop every detail-panel subject at once (a click always replaces the panel).
+  const clearPanels = useCallback(() => {
+    setDetail(null);
+    setCaseBasic(null);
+    setPerson(null);
+    setEdgeDetail(null);
+  }, []);
+
   const load = useCallback(
     async (type: NodeType, id: string, merge = false) => {
       if (!merge) setLoadingMsg("Loading case overview…");
@@ -183,17 +195,9 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           // stats bar only appears once an entity is expanded.
           setResultCount(null);
           // remember the seed's attributes so expansions can pre-filter to its
-          // crime type (see preFilterFor / expand)
-          seedAttrsRef.current = a.seed
-            ? {
-                subhead_id: a.seed.subhead_id,
-                district_id: a.seed.district_id,
-                station_id: a.seed.station_id,
-                accused_name: a.seed.accused_name,
-                accused_age: a.seed.accused_age,
-                accused_gender: a.seed.accused_gender,
-              }
-            : null;
+          // crime type (see preFilterFor / expand); buildPreFilter reads only the
+          // profile fields, so passing the whole seed object is harmless.
+          seedAttrsRef.current = a.seed;
         } else {
           const sg = await fetchSubgraph(type, id, { depth: 1, limit: 40 });
           setSubgraph(sg);
@@ -208,27 +212,20 @@ export function GraphView({ seed, onSeed, theme }: Props) {
           gEdges.forEach((e) => edges.set(e.edge_id, e));
           return { nodes, edges };
         });
-        if (!merge) {
-          setDetail(null);
-          setCaseBasic(null);
-          setEdgeDetail(null);
-        }
+        if (!merge) clearPanels();
       } catch (e) {
         setError(String(e instanceof Error ? e.message : e));
       } finally {
         setLoading(false);
       }
     },
-    [],
+    [clearPanels],
   );
 
-  // Show ONE entity's expansion as a self-contained view. It REPLACES the graph
-  // (Back returns to the overview) so the previous view isn't left behind.
-  //  - ACCUSED focus  -> the identity view: the focus person + the SAME person's
-  //    other records (SAME_IDENTITY), i.e. "only the similar people" — not their
-  //    individual cases (drill a record for its FIR).
-  //  - PLACE/charge focus -> the focus entity, the seed case, and the related
-  //    cases; sibling entities dropped.
+  // Show ONE entity's expansion (a place or charge) as a self-contained view:
+  // the focus entity, the seed case, and the related cases; sibling entities
+  // dropped. It REPLACES the graph (Back returns to the overview). Persons never
+  // reach here — they route to openPerson (their own detail + cases).
   const showFocus = useCallback(async (focus: string, pg = 0) => {
     setLoading(true);
     setError(null);
@@ -239,39 +236,19 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         offset: pg * PAGE_SIZE,
       });
       setExpandable(ex.expandable ?? {});
-      // Accused OR victim expansion resolves the SAME person's other records
-      // (same-suspect / same-victim), both drawn as SAME_IDENTITY edges. Place
-      // and charge expansions instead surface related cases.
-      const isPerson =
-        focus.startsWith("ACCUSED_RECORD:") || focus.startsWith("VICTIM_RECORD:");
+      // Keep the focus entity, the seed case, and the related cases; drop the
+      // sibling entities so the expansion reads as a self-contained cluster.
+      const seedNodeId = `CASE:${id}`;
       const nodes = new Map<string, GraphNode>();
       const edges = new Map<string, GraphEdge>();
-      if (isPerson) {
-        // the focus person and the records SAME_IDENTITY links to it — nothing else
-        const people = new Set<string>([focus]);
-        ex.edges.forEach((e) => {
-          if (e.relationship_type !== "SAME_IDENTITY") return;
-          if (e.source === focus) people.add(e.target);
-          if (e.target === focus) people.add(e.source);
-        });
-        ex.nodes.forEach((n) => {
-          if (people.has(n.node_id)) nodes.set(n.node_id, n);
-        });
-        ex.edges.forEach((e) => {
-          if (e.relationship_type === "SAME_IDENTITY" && nodes.has(e.source) && nodes.has(e.target))
-            edges.set(e.edge_id, e);
-        });
-      } else {
-        const seedNodeId = `CASE:${id}`;
-        const keep = (n: GraphNode) =>
-          n.node_id === focus || n.node_id === seedNodeId || n.node_type === "CASE";
-        ex.nodes.forEach((n) => {
-          if (keep(n)) nodes.set(n.node_id, n);
-        });
-        ex.edges.forEach((e) => {
-          if (nodes.has(e.source) && nodes.has(e.target)) edges.set(e.edge_id, e);
-        });
-      }
+      const keep = (n: GraphNode) =>
+        n.node_id === focus || n.node_id === seedNodeId || n.node_type === "CASE";
+      ex.nodes.forEach((n) => {
+        if (keep(n)) nodes.set(n.node_id, n);
+      });
+      ex.edges.forEach((e) => {
+        if (nodes.has(e.source) && nodes.has(e.target)) edges.set(e.edge_id, e);
+      });
       setResultCount(ex.total_matches);
       setPage(pg);
       setPageInfo({ total: ex.total_matches, offset: ex.offset, count: ex.association_count });
@@ -323,23 +300,52 @@ export function GraphView({ seed, onSeed, theme }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed?.type, seed?.id]);
 
-  const openNode = useCallback((type: NodeType, refId: string) => {
-    setEdgeDetail(null);
-    setShowDetail(false); // load it, but keep it behind the info button until asked
-    if (type === "CASE") {
-      // A case click shows the FIR at a glance — served instantly from the warm
-      // case cache (no heavy graph metrics / cross-FIR linking — PERF-001).
-      setDetail(null);
-      fetchCaseBasic(refId)
-        .then((r) => setCaseBasic(r.case))
+  const openNode = useCallback(
+    (type: NodeType, refId: string) => {
+      clearPanels();
+      setShowDetail(false); // load it, but keep it behind the info button until asked
+      if (type === "CASE") {
+        // A case click shows the FIR at a glance — served instantly from the warm
+        // case cache (no heavy graph metrics / cross-FIR linking — PERF-001).
+        fetchCaseBasic(refId)
+          .then((r) => setCaseBasic(r.case))
+          .catch((e) => setError(String(e)));
+        return;
+      }
+      fetchNodeDetail(type, refId)
+        .then(setDetail)
         .catch((e) => setError(String(e)));
-      return;
-    }
-    setCaseBasic(null);
-    fetchNodeDetail(type, refId)
-      .then(setDetail)
+    },
+    [clearPanels],
+  );
+
+  // A person click opens that accused/victim's detail + the cases sharing their
+  // exact name+age+gender (never the old similar-people expansion).
+  const openPerson = useCallback((role: "accused" | "victim", refId: string) => {
+    fetchPerson(role, refId)
+      .then((r) => {
+        setPerson(r.person);
+        setShowDetail(true);
+      })
       .catch((e) => setError(String(e)));
   }, []);
+
+  // "Show their N cases": a person-centered view (person + one node per case).
+  const showPersonCases = useCallback(
+    (p: PersonDetail) => {
+      snapshot();
+      const { nodes, edges, centerId } = buildPersonGraph(p);
+      setShowDetail(false);
+      setMerged({ nodes, edges });
+      setDrilled(true);
+      setFocusId(centerId);
+      setExpandable({});
+      setPageInfo(null);
+      setResultCount(null);
+      activeFocusRef.current = null;
+    },
+    [snapshot],
+  );
 
   // navigate (reseed) / expand (merge) — both snapshot first so Back can undo
   const navigate = useCallback(
@@ -449,19 +455,17 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         openNode(type, ref);
         setShowDetail(true);
       },
+      onOpenPerson: openPerson,
       onEdgeTap: (edgeId) => {
         const e = merged.edges.get(edgeId);
         if (e) {
-          setDetail(null);
-          setCaseBasic(null);
+          clearPanels();
           setEdgeDetail(e);
           setShowDetail(false); // surface via the info button, open on click
         }
       },
       onCanvasTap: () => {
-        setDetail(null);
-        setCaseBasic(null);
-        setEdgeDetail(null);
+        clearPanels();
         setShowDetail(false);
       },
       onHover: setHover,
@@ -471,7 +475,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [merged, openNode, expand, expandable, theme, viewDims, seedType, seedId]);
+  }, [merged, openNode, openPerson, expand, clearPanels, expandable, theme, viewDims, seedType, seedId]);
 
   // zoom-to-cluster: when a node is focused (tapped), dim the rest and animate
   // the camera to fit that node and its linked records
@@ -498,10 +502,6 @@ export function GraphView({ seed, onSeed, theme }: Props) {
   const focusLabel = activeFocusRef.current
     ? merged.nodes.get(activeFocusRef.current)?.label ?? ""
     : "";
-  const focusIsPerson =
-    activeFocusRef.current?.startsWith("ACCUSED_RECORD:") ||
-    activeFocusRef.current?.startsWith("VICTIM_RECORD:") ||
-    false;
   // the expanded entity's type — its own attribute is redundant to filter on
   // (every result already shares it), so that field is hidden in the Filter
   const focusType = (activeFocusRef.current?.split(":")[0] as NodeType | undefined) ?? null;
@@ -547,8 +547,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
         {drilled && pageInfo && (
           <div className="graph-stats" role="status">
             {focusLabel ? `${focusLabel} · ` : ""}
-            {pageInfo.total} {focusIsPerson ? "same-person record" : "case"}
-            {pageInfo.total === 1 ? "" : "s"}
+            {pageInfo.total} case{pageInfo.total === 1 ? "" : "s"}
             {pageInfo.total > PAGE_SIZE
               ? ` (showing ${pageInfo.offset + 1}–${pageInfo.offset + pageInfo.count})`
               : ""}
@@ -584,6 +583,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
             detail={detail}
             edgeDetail={edgeDetail}
             caseBasic={caseBasic}
+            person={person}
             canNavigate={canNavigateNode(detail?.node, expandable, merged.edges)}
             onClose={() => setShowDetail(false)}
             onNavigate={(type, id) => {
@@ -591,6 +591,7 @@ export function GraphView({ seed, onSeed, theme }: Props) {
               navigate({ type, id });
             }}
             onNavigateCase={(id) => navigate({ type: "CASE", id })}
+            onShowPersonCases={showPersonCases}
           />
         )}
       </div>

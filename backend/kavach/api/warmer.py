@@ -92,7 +92,7 @@ def _clear_caches() -> None:
     from kavach.analytics.risk import engine as risk_engine
 
     data.enriched_cases.cache_clear()
-    for name in ("case_narratives", "accused_records", "victim_records"):
+    for name in ("case_narratives", "accused_records", "victim_records", "_person_case_index"):
         fn = getattr(data, name, None)
         clear = getattr(fn, "cache_clear", None)
         if clear:

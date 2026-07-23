@@ -6,7 +6,7 @@ All responses are derived from SYNTHETIC data (ADR-011).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 
 from kavach.analytics.anomaly import detect_anomalies
 from kavach.analytics.anomaly import engine as anomaly_engine
@@ -85,6 +85,36 @@ def get_case(case_id: int) -> dict:
     if case is None:
         raise HTTPException(status_code=404, detail=f"unknown case {case_id}")
     return {"synthetic": True, "case": case, "intelligence": envelope(**_FACT_ENVELOPE)}
+
+
+@router.get("/persons/{role}/{record_id}")
+def get_person(
+    role: str = Path(..., pattern="^(accused|victim)$"),
+    record_id: str = Path(...),
+) -> dict:
+    """One accused/victim's own details plus every case they appear in.
+
+    The person's attributes are FACT; the cross-case list is a POTENTIAL
+    ASSOCIATION — cases are linked by exact name+age+gender (there is no id that
+    spans cases), so it can include different people who share all three
+    (namesakes). Served light from the warm caches — no entity resolution."""
+    person = data.person_detail(role, record_id)
+    if person is None:
+        raise HTTPException(status_code=404, detail=f"unknown {role} {record_id}")
+    return {
+        "synthetic": True,
+        "person": person,
+        "intelligence": envelope(
+            classification=DataClassification.POTENTIAL_ASSOCIATION,
+            method_name="attribute_match",
+            method_version="1.0.0",
+            limitations=(
+                "cases linked by exact name+age+gender — may include different "
+                "people who share them",
+                "synthetic data (ADR-011)",
+            ),
+        ),
+    }
 
 
 @router.get("/hotspots")

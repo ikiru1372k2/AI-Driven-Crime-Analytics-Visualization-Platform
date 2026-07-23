@@ -1,7 +1,14 @@
 /** The node / edge detail card for the association graph. Extracted from
  *  GraphView so that component stays under the source-size gate. Provenance-
  *  first: every edge shows its evidence FIR; every metric its method/run. */
-import type { CaseBasic, CasePerson, GraphEdge, NodeDetail, NodeType } from "../lib/graphApi";
+import type {
+  CaseBasic,
+  CasePerson,
+  GraphEdge,
+  NodeDetail,
+  NodeType,
+  PersonDetail,
+} from "../lib/graphApi";
 import { NODE_COLORS } from "./graphConfig";
 
 interface Props {
@@ -10,6 +17,8 @@ interface Props {
   /** Basic detail for a clicked case node — everything we know about the FIR,
    *  served instantly from the warm cache (no graph metrics — PERF-001). */
   caseBasic: CaseBasic | null;
+  /** A clicked accused/victim: their own attributes + their other cases. */
+  person: PersonDetail | null;
   /** Whether "Navigate here" is offered. For people it's only meaningful when
    *  the person has an identity match under a different name (else there's
    *  nothing new to explore); places/charges/cases can always be navigated. */
@@ -17,6 +26,8 @@ interface Props {
   onClose: () => void;
   onNavigate: (type: NodeType, id: string) => void;
   onNavigateCase: (caseId: string) => void;
+  /** Redraw the graph centered on this person, one node per case. */
+  onShowPersonCases: (p: PersonDetail) => void;
 }
 
 /** "Name, 34" — a person as we know them on the FIR (age omitted if unknown). */
@@ -25,15 +36,67 @@ function personLabel(p: CasePerson): string {
   return p.age != null ? `${name}, ${p.age}` : name;
 }
 
+/** M/F codes to the words the panel shows (anything else passes through). */
+function sexLabel(gender: string | null): string {
+  return gender === "M" ? "Male" : gender === "F" ? "Female" : gender ?? "—";
+}
+
 export function GraphDetailPanel({
   detail,
   edgeDetail,
   caseBasic,
+  person,
   canNavigate,
   onClose,
   onNavigate,
   onNavigateCase,
+  onShowPersonCases,
 }: Props) {
+  if (person) {
+    const roleType = person.role === "accused" ? "ACCUSED_RECORD" : "VICTIM_RECORD";
+    return (
+      <aside className="graph-panel" aria-label="Person detail">
+        <header>
+          <span className="node-dot" style={{ background: NODE_COLORS[roleType] }} aria-hidden />
+          <strong>{person.name ?? "Unknown"}</strong>
+          <button className="close" aria-label="Close detail" onClick={onClose}>
+            ×
+          </button>
+        </header>
+        <p className="badge">{person.role === "accused" ? "Accused" : "Victim"}</p>
+        <dl className="metric-grid">
+          <dt>Name</dt>
+          <dd>{person.name ?? "—"}</dd>
+          <dt>Age</dt>
+          <dd>{person.age != null ? person.age : "—"}</dd>
+          <dt>Sex</dt>
+          <dd>{sexLabel(person.gender)}</dd>
+          <dt>Location</dt>
+          <dd>{person.district_name ?? "—"}</dd>
+        </dl>
+        <p className="section-label">Involved in {person.case_count} case{person.case_count === 1 ? "" : "s"}</p>
+        <ul className="case-list">
+          {person.cases.map((c) => (
+            <li key={c.case_id}>
+              <button className="linklike" onClick={() => onNavigateCase(c.case_id)}>
+                {c.crime_no ?? `Case ${c.case_id}`}
+                {c.subhead_name ? ` · ${c.subhead_name}` : ""}
+              </button>
+            </li>
+          ))}
+        </ul>
+        {person.case_count > 1 && (
+          <button className="nav-btn" onClick={() => onShowPersonCases(person)}>
+            Show their {person.case_count} cases →
+          </button>
+        )}
+        <p className="muted small">
+          Matched by name + age + gender — may include different people who share them.
+        </p>
+      </aside>
+    );
+  }
+
   if (caseBasic) {
     const c = caseBasic;
     const crime = c.subhead_name ?? c.head_name ?? "—";
