@@ -139,7 +139,9 @@ def test_read_table_returns_a_copy(monkeypatch):
     monkeypatch.setattr(datastore, "settings", types.SimpleNamespace(datastore_cache_ttl=999))
     monkeypatch.setattr(
         datastore, "_query",
-        lambda z: _wrap("District", [{"ROWID": "1", "DistrictID": "1"}]) if "ROWID > 0" in z else [],
+        lambda z: (
+            _wrap("District", [{"ROWID": "1", "DistrictID": "1"}]) if "ROWID > 0" in z else []
+        ),
     )
     df = datastore.read_table("District")
     df.loc[0, "DistrictID"] = "MUTATED"
