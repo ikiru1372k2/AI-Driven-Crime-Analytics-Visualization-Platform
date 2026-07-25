@@ -3,14 +3,15 @@ name: Deploy to Catalyst
 # Auto-deploy on green main (CAT/#84). Runs only after CI passes, so a
 # failing test never reaches the judged demo URLs.
 #
-# Requires one repository secret — CATALYST_TOKEN — minted with
-# `catalyst token:generate` (the device-code verification MUST be completed
-# by the same Zoho account the CLI is logged in as). Project/org ids are
-# identifiers, not secrets (they are recorded in docs/catalyst/project.md);
+# Requires repository secrets:
+#   - CATALYST_TOKEN — minted with `catalyst token:generate` (device-code
+#     verification MUST be completed by the same Zoho account the CLI is
+#     logged in as). Without it the job skips cleanly (noise, not signal).
+#   - KAVACH_QUICKML_* / KAVACH_ZOHO_* — FORECAST predictor OAuth (see
+#     scripts/catalyst/deploy.env.example). deploy_backend.sh refuses to
+#     ship empty predictor credentials.
+# Project/org ids are identifiers, not secrets (docs/catalyst/project.md);
 # they are read from repository *variables* with a documented fallback.
-#
-# Until the secret exists this workflow skips cleanly instead of failing —
-# a red main on a missing credential would be noise, not signal.
 
 on:
   workflow_run:
@@ -39,6 +40,20 @@ jobs:
       CATALYST_PROJECT_ID: ${{ vars.CATALYST_PROJECT_ID || '42171000000017001' }}
       CATALYST_ORG_ID: ${{ vars.CATALYST_ORG_ID || '60078928452' }}
       APPSAIL_URL: ${{ vars.APPSAIL_URL || 'https://kavach-analytics-50044141253.development.catalystappsail.in' }}
+      # FORECAST predictor + Data Store (mirrored from deploy.env; never commit).
+      KAVACH_QUICKML_RISK_ENDPOINT: ${{ secrets.KAVACH_QUICKML_RISK_ENDPOINT }}
+      KAVACH_QUICKML_RISK_URL: ${{ secrets.KAVACH_QUICKML_RISK_URL }}
+      KAVACH_ZOHO_CLIENT_ID: ${{ secrets.KAVACH_ZOHO_CLIENT_ID }}
+      KAVACH_ZOHO_CLIENT_SECRET: ${{ secrets.KAVACH_ZOHO_CLIENT_SECRET }}
+      KAVACH_ZOHO_REFRESH_TOKEN: ${{ secrets.KAVACH_ZOHO_REFRESH_TOKEN }}
+      KAVACH_ZOHO_ACCOUNTS_URL: ${{ secrets.KAVACH_ZOHO_ACCOUNTS_URL }}
+      KAVACH_QUICKML_ORG_ID: ${{ secrets.KAVACH_QUICKML_ORG_ID }}
+      KAVACH_QUICKML_ENVIRONMENT: ${{ secrets.KAVACH_QUICKML_ENVIRONMENT }}
+      KAVACH_QUICKML_LLM_ENDPOINT: ${{ secrets.KAVACH_QUICKML_LLM_ENDPOINT }}
+      KAVACH_QUICKML_LLM_MODEL_ID: ${{ secrets.KAVACH_QUICKML_LLM_MODEL_ID }}
+      KAVACH_QUICKML_LLM_MODEL: ${{ secrets.KAVACH_QUICKML_LLM_MODEL }}
+      KAVACH_DATA_SOURCE: ${{ secrets.KAVACH_DATA_SOURCE }}
+      KAVACH_DATASTORE_REFRESH_TOKEN: ${{ secrets.KAVACH_DATASTORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
