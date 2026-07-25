@@ -61,8 +61,37 @@ the wrong auto-login.
    gh secret set CATALYST_TOKEN
    ```
 
-Until the secret exists the deploy job **skips with a notice** rather than
-failing — a red `main` caused by a missing credential is noise, not signal.
+Until `CATALYST_TOKEN` exists the deploy job **skips with a notice** rather
+than failing — a red `main` caused by a missing credential is noise, not
+signal.
+
+### FORECAST / Data Store secrets (required for a real deploy)
+
+`deploy_backend.sh` refuses to ship if the QuickML predictor secrets are
+empty (so a deploy cannot silently wipe live credentials). Set them from a
+local `scripts/catalyst/deploy.env` (git-ignored; copy from
+`deploy.env.example`):
+
+```bash
+# required predictor secrets
+gh secret set KAVACH_QUICKML_RISK_ENDPOINT < scripts/catalyst/deploy.env   # or --body
+gh secret set KAVACH_QUICKML_RISK_URL --body 'https://api.catalyst.zoho.in/...'
+gh secret set KAVACH_ZOHO_CLIENT_ID --body '...'
+gh secret set KAVACH_ZOHO_CLIENT_SECRET --body '...'
+gh secret set KAVACH_ZOHO_REFRESH_TOKEN --body '...'
+gh secret set KAVACH_QUICKML_ORG_ID --body '60078928452'
+
+# optional but recommended (LLM summaries + live Data Store)
+gh secret set KAVACH_ZOHO_ACCOUNTS_URL --body 'https://accounts.zoho.in'
+gh secret set KAVACH_QUICKML_ENVIRONMENT --body 'Development'
+gh secret set KAVACH_QUICKML_LLM_ENDPOINT --body '...'
+gh secret set KAVACH_QUICKML_LLM_MODEL_ID --body '...'
+gh secret set KAVACH_QUICKML_LLM_MODEL --body 'GLM-4.7'
+gh secret set KAVACH_DATA_SOURCE --body 'datastore'
+gh secret set KAVACH_DATASTORE_REFRESH_TOKEN --body '...'
+```
+
+Or pipe each value: `printf '%s' "$VAL" | gh secret set NAME`.
 
 ## Configuration
 
