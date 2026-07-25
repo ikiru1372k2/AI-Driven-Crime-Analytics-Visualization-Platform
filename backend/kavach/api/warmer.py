@@ -11,6 +11,9 @@ otherwise exceed AppSail's 30s HTTP limit and time out:
    over every accused record — ~13s on the deployed demo, longer on a cold
    Data Store read — and backs BOTH ``/identities`` and ``/associations`` (via the
    same-suspect channel). This is CPU-bound, so it is warmed in **every** mode.
+3. **MO extraction.** Without shipped ``mo_profiles.json``, the deterministic
+   extractor walks every case narrative on first ``/api/v1/mo/*`` — that also
+   exceeds the HTTP limit, so ``mo_store`` is primed here too.
 
 A daemon thread does the work (not bound by the HTTP limit): on boot it primes
 the caches, and in Data Store mode it also refreshes the snapshot every
@@ -116,6 +119,7 @@ def _prime() -> None:
     from kavach.analytics.anomaly.engine import detect_anomalies
     from kavach.analytics.entity import resolve_identities
     from kavach.analytics.risk.engine import forecast_area_risk
+    from kavach.api.mo_routes import mo_store
 
     for label, fn in (
         ("enriched_cases", data.enriched_cases),
@@ -130,6 +134,9 @@ def _prime() -> None:
         # model is unconfigured — the engines return available:false fast).
         ("anomaly_scan", detect_anomalies),
         ("area_risk_forecast", forecast_area_risk),
+        # MO cold extraction of ~16k narratives exceeds AppSail's HTTP limit
+        # (~30s) when it runs on the first /api/v1/mo/* request; warm it here.
+        ("mo_store", mo_store),
     ):
         if fn is None:
             continue
