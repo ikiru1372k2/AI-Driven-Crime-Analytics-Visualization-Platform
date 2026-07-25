@@ -172,8 +172,16 @@ jobs:
           # Graph + evidence build the projection from the bundled manifest.
           # These 500'd in production while passing locally (docs/ was not
           # shipped), so the pipeline now proves them on every deploy.
+          # MO cold-extract can exceed AppSail's HTTP limit until the warmer
+          # finishes; retry 408/5xx so we wait for that rather than flake.
           for path in "/api/v1/graph/subgraph?seed_type=CASE&seed_id=7231" "/api/v1/evidence/runs" "/api/v1/mo/runs/latest"; do
-            code=$(curl -s -m 180 -o /tmp/probe.json -w '%{http_code}' "$APPSAIL_URL$path")
+            code=""
+            for attempt in 1 2 3 4 5 6 7 8; do
+              code=$(curl -s -m 180 -o /tmp/probe.json -w '%{http_code}' "$APPSAIL_URL$path" || true)
+              [ "$code" = "200" ] && break
+              echo "probe $path attempt $attempt: HTTP $code — retrying"
+              sleep 15
+            done
             [ "$code" = "200" ] || { echo "FAILED $path -> $code"; head -c 300 /tmp/probe.json; exit 1; }
             echo "ok $path"
           done

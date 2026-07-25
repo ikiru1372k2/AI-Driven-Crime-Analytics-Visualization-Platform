@@ -54,10 +54,14 @@ def test_prime_is_best_effort_and_never_raises(monkeypatch):
     monkeypatch.setattr(anomaly_engine, "detect_anomalies", lambda: calls.append("anomaly"))
     monkeypatch.setattr(risk_engine, "forecast_area_risk", lambda: calls.append("risk"))
 
+    import kavach.api.mo_routes as mo_routes
+
+    monkeypatch.setattr(mo_routes, "mo_store", lambda: calls.append("mo"))
+
     warmer._prime()  # must not raise even though the first builder throws
 
     assert "enriched" in calls  # the failing one was attempted
-    assert {"accused", "victim", "identities", "graph", "anomaly", "risk"} <= set(calls)
+    assert {"accused", "victim", "identities", "graph", "anomaly", "risk", "mo"} <= set(calls)
 
 
 def test_publish_swaps_snapshot_and_clears_caches(monkeypatch):
