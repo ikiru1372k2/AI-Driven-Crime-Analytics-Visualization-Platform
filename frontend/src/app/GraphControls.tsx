@@ -24,11 +24,14 @@ interface Props {
    *  attribute, so filtering on that attribute is redundant and its field is
    *  hidden (e.g. no District dropdown while expanding a district). */
   expandedType?: NodeType | null;
+  /** A district/station area case list. Only crime-type + date filters apply
+   *  (name/age/gender are accused attributes, not case-list filters). */
+  areaMode?: boolean;
 }
 
 export function GraphControls({
   showView, showFilter, viewDims, onToggleDim, filters, onApplyFilters, resultCount,
-  expandedType,
+  expandedType, areaMode = false,
 }: Props) {
   const [open, setOpen] = useState<"view" | "filter" | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -110,7 +113,7 @@ export function GraphControls({
 
       {open === "filter" && (
         <div className="gc-pop wide">
-          <p className="gc-title">Filter associations {resultCount != null && <span className="gc-count">· {resultCount} found</span>}</p>
+          <p className="gc-title">Filter {areaMode ? "cases" : "associations"} {resultCount != null && <span className="gc-count">· {resultCount} found</span>}</p>
 
           {/* the crime is already fixed when a crime-type node is expanded */}
           {expandedType !== "CRIME_SUBHEAD" && expandedType !== "CRIME_HEAD" && (
@@ -124,8 +127,9 @@ export function GraphControls({
             </label>
           )}
 
-          {/* the district is already fixed when a district node is expanded */}
-          {expandedType !== "DISTRICT" && (
+          {/* the district is already fixed when a district node is expanded or
+              an area (district/station) is seeded */}
+          {!areaMode && expandedType !== "DISTRICT" && (
             <label className="gc-field">District
               <select value={draft.district_id ?? ""} onChange={(e) => set("district_id", e.target.value)}>
                 <option value="">any</option>
@@ -136,32 +140,37 @@ export function GraphControls({
             </label>
           )}
 
-          <label className="gc-field">Name (contains)
-            <input value={draft.name_contains ?? ""} placeholder="e.g. Ravi"
-              onChange={(e) => set("name_contains", e.target.value)} />
-          </label>
-          <label className="gc-field">Name (exact)
-            <input value={draft.name_exact ?? ""} placeholder="e.g. Suresh Babu"
-              onChange={(e) => set("name_exact", e.target.value)} />
-          </label>
+          {/* name/age/gender are accused attributes — not case-list filters */}
+          {!areaMode && (
+            <>
+              <label className="gc-field">Name (contains)
+                <input value={draft.name_contains ?? ""} placeholder="e.g. Ravi"
+                  onChange={(e) => set("name_contains", e.target.value)} />
+              </label>
+              <label className="gc-field">Name (exact)
+                <input value={draft.name_exact ?? ""} placeholder="e.g. Suresh Babu"
+                  onChange={(e) => set("name_exact", e.target.value)} />
+              </label>
 
-          <div className="gc-row">
-            <label className="gc-field">Age min
-              <input type="number" min={0} max={120} value={draft.age_min ?? ""}
-                onChange={(e) => setNum("age_min", e.target.value)} />
-            </label>
-            <label className="gc-field">Age max
-              <input type="number" min={0} max={120} value={draft.age_max ?? ""}
-                onChange={(e) => setNum("age_max", e.target.value)} />
-            </label>
-            <label className="gc-field">Gender
-              <select value={draft.gender ?? ""} onChange={(e) => set("gender", e.target.value)}>
-                <option value="">any</option>
-                <option value="M">M</option>
-                <option value="F">F</option>
-              </select>
-            </label>
-          </div>
+              <div className="gc-row">
+                <label className="gc-field">Age min
+                  <input type="number" min={0} max={120} value={draft.age_min ?? ""}
+                    onChange={(e) => setNum("age_min", e.target.value)} />
+                </label>
+                <label className="gc-field">Age max
+                  <input type="number" min={0} max={120} value={draft.age_max ?? ""}
+                    onChange={(e) => setNum("age_max", e.target.value)} />
+                </label>
+                <label className="gc-field">Gender
+                  <select value={draft.gender ?? ""} onChange={(e) => set("gender", e.target.value)}>
+                    <option value="">any</option>
+                    <option value="M">M</option>
+                    <option value="F">F</option>
+                  </select>
+                </label>
+              </div>
+            </>
+          )}
 
           <div className="gc-row">
             <label className="gc-field">From

@@ -234,12 +234,14 @@ export interface AreaCasesResult {
 }
 
 /** All cases in a district or police station, paged — the seed views for a
- *  DISTRICT / POLICE_STATION graph. No association filters: every case in the
- *  area, straight from /api/cases (with_coords off so ungeocoded cases count). */
+ *  DISTRICT / POLICE_STATION graph, straight from /api/cases (with_coords off so
+ *  ungeocoded cases count). Optional crime-type / date filters narrow the list;
+ *  person-attribute filters (name/age/gender) don't apply to an area case list. */
 export function fetchAreaCases(
   kind: "district" | "station",
   id: string,
   page: { limit: number; offset: number },
+  filters: AssocFilters = {},
 ): Promise<AreaCasesResult> {
   const p = new URLSearchParams({
     with_coords: "false",
@@ -247,6 +249,10 @@ export function fetchAreaCases(
     offset: String(page.offset),
   });
   p.set(kind === "district" ? "district_id" : "station_id", id);
+  for (const k of ["subhead_id", "date_from", "date_to"] as const) {
+    const v = filters[k];
+    if (v !== undefined && v !== null && v !== "") p.set(k, String(v));
+  }
   return get(`/api/cases?${p}`);
 }
 
