@@ -48,20 +48,20 @@ export function CommandNav({
 }: Props) {
   const groups: NavGroup[] = [
     {
-      label: "DETECT",
+      label: "",
       items: [
-        { label: "Geospatial Ops", view: "map", dot: "#3987e5" },
         {
           label: "Trends",
           view: "overview",
           dot: "#3987e5",
           badge: alertCount > 0 ? String(alertCount) : undefined,
         },
+        { label: "Geospatial Ops", view: "map", dot: "#3987e5" }
       ],
     },
-    { label: "UNDERSTAND", items: [{ label: "MO Profiles", view: "mo", dot: "#d9a13b" }] },
+    { label: "", items: [{ label: "MO Profiles", view: "mo", dot: "#d9a13b" }] },
     {
-      label: "CONNECT",
+      label: "",
       items: [
         { label: "Networks", view: "graph", dot: "#a76fb9" },
         {
@@ -73,7 +73,7 @@ export function CommandNav({
       ],
     },
     {
-      label: "FLAG",
+      label: "",
       items: [
         {
           label: "Anomalies",
@@ -83,7 +83,7 @@ export function CommandNav({
         },
       ],
     },
-    { label: "FORECAST", items: [{ label: "Area Risk", view: "forecast", dot: "#5aa9a3" }] },
+    { label: "", items: [{ label: "Area Risk", view: "forecast", dot: "#5aa9a3" }] },
   ];
 
   return (
@@ -125,9 +125,6 @@ export function CommandNav({
         ))}
       </div>
 
-      <span className="scope-chip" title="Authorization scope (CAT-003/#19 binds real roles)">
-        STATE · Karnataka
-      </span>
       <button
         className="theme-toggle"
         onClick={onToggleTheme}

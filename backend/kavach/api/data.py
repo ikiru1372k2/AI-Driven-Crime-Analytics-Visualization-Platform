@@ -442,6 +442,57 @@ def district_stats(window_days: int = 30) -> list[dict]:
     out.sort(key=lambda d: d["case_count"], reverse=True)
     return out
 
+_AGE_BANDS = [(0, 17, "0-17"), (18, 25, "18-25"), (26, 35, "26-35"),
+              (36, 45, "36-45"), (46, 60, "46-60"), (61, 200, "61+")]
+
+
+def _age_band(age):
+    if age is None:
+        return "Unknown"
+    for lo, hi, label in _AGE_BANDS:
+        if lo <= age <= hi:
+            return label
+    return "Unknown"
+
+
+def overview_charts() -> dict:
+    """Aggregate counts for the Overview dashboard's charts: district, status,
+    crime category and accused age-band distributions. Read-only, derived
+    entirely from already-memoized frames (no extra scans of the raw store).
+    """
+    df = enriched_cases()
+
+    by_district = (
+        df.groupby("district_name").size().sort_values(ascending=False)
+        .rename("count").reset_index()
+        .to_dict(orient="records")
+    )
+    by_status = (
+        df["status"].fillna("Unknown").value_counts()
+        .rename_axis("status").reset_index(name="count")
+        .to_dict(orient="records")
+    )
+    # "category" here = crime sub-head (more actionable than FIR/UDR/PAR category)
+    by_crime = (
+        df["subhead_name"].fillna("Unknown").value_counts().head(10)
+        .rename_axis("crime_type").reset_index(name="count")
+        .to_dict(orient="records")
+    )
+    bands: dict[str, int] = {}
+    for rec in accused_records():
+        b = _age_band(rec["age"])
+        bands[b] = bands.get(b, 0) + 1
+    order = [b[2] for b in _AGE_BANDS] + ["Unknown"]
+    by_age = [{"age_band": b, "count": bands.get(b, 0)} for b in order if bands.get(b, 0) > 0]
+
+    return {
+        "synthetic": True,
+        "by_district": by_district,
+        "by_status": by_status,
+        "by_crime_type": by_crime,
+        "by_age_band": by_age,
+    }
+
 
 def meta() -> dict:
     """Lookup values + dataset summary for filters, map centering, and banners."""
