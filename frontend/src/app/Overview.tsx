@@ -9,6 +9,9 @@ import { fetchOverview, type Severity, type TrendAlert } from "../lib/api";
 import { fetchDecisions, postDecision } from "../lib/evidenceApi";
 import { useCachedQuery } from "../lib/queryCache";
 import { Sparkline } from "./Sparkline";
+import { fetchOverviewCharts } from "../lib/api";
+import { BarChart } from "./BarChart";
+import { DonutChart } from "./DonutChart";
 
 const REVALIDATE_MS = 5 * 60_000; // background reload cadence (backend TTL ~5 min)
 
@@ -29,6 +32,9 @@ export function Overview({ onOpenMap }: { onOpenMap: () => void }) {
   const { data, error, refreshing, refresh } = useCachedQuery("overview", fetchOverview, {
     refetchIntervalMs: REVALIDATE_MS,
   });
+  const { data: charts } = useCachedQuery("overview:charts", fetchOverviewCharts, {
+  refetchIntervalMs: REVALIDATE_MS,
+});
   const [acked, setAcked] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -67,6 +73,17 @@ export function Overview({ onOpenMap }: { onOpenMap: () => void }) {
   };
 
   const t = data.alert_tally;
+
+  const STATUS_COLORS: Record<string, string> = {
+  "Under Investigation": "#fab219",
+  "Charge Sheeted": "#3987e5",
+  Closed: "#0ca30c",
+  Unknown: "#6f6e69",
+};
+const CRIME_PALETTE = [
+  "#3987e5", "#d95926", "#a76fb9", "#5aa9a3", "#c9a94f",
+  "#d03b3b", "#4f7cc9", "#8a7dc9", "#6f8f5a", "#c98a4f",
+];
 
   return (
     <div className="overview">
@@ -168,6 +185,49 @@ export function Overview({ onOpenMap }: { onOpenMap: () => void }) {
           <button className="open-map" onClick={onOpenMap}>Open hotspot map →</button>
         </section>
       </div>
+      {charts && (
+  <div className="ov-charts">
+    <section className="chart-card">
+      <p className="section-label">Cases by district</p>
+      <BarChart
+        rows={charts.by_district.slice(0, 12).map((d) => ({
+          label: d.district_name,
+          value: d.count,
+        }))}
+      />
+    </section>
+
+    <section className="chart-card">
+      <p className="section-label">FIR status</p>
+      <DonutChart
+        slices={charts.by_status.map((s) => ({
+          label: s.status,
+          value: s.count,
+          color: STATUS_COLORS[s.status] ?? "#6f6e69",
+        }))}
+      />
+    </section>
+
+    <section className="chart-card">
+      <p className="section-label">Top crime types</p>
+      <DonutChart
+        slices={charts.by_crime_type.map((c, i) => ({
+          label: c.crime_type,
+          value: c.count,
+          color: CRIME_PALETTE[i % CRIME_PALETTE.length],
+        }))}
+      />
+    </section>
+
+    <section className="chart-card">
+      <p className="section-label">Accused by age group</p>
+      <BarChart
+        rows={charts.by_age_band.map((a) => ({ label: a.age_band, value: a.count }))}
+        color="#a76fb9"
+      />
+    </section>
+  </div>
+)}
     </div>
   );
 }

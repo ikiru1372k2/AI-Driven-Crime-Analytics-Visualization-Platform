@@ -445,7 +445,7 @@ select:focus-visible {
 .legend {
   position: absolute;
   left: 12px;
-  bottom: 12px;
+  bottom: 80px;
   background: var(--overlay);
   border: 1px solid var(--hairline);
   border-radius: 8px;
@@ -1388,10 +1388,9 @@ select:focus-visible {
 /* ---- theme toggle ---- */
 .theme-toggle {
   margin-left: auto;
-  background: var(--surface-2);
+  background: transparent;
   color: var(--ink-2);
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border: none;
   font: inherit;
   font-size: 0.75rem;
   padding: 0.3rem 0.7rem;
@@ -1399,7 +1398,6 @@ select:focus-visible {
 }
 .theme-toggle:hover {
   color: var(--ink);
-  border-color: var(--series-1);
 }
 
 /* ---- association graph: floating view/lens switcher (over the canvas) ---- */
@@ -2553,4 +2551,69 @@ select:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .fl-caret { transition: none; }
+}
+
+/* ---- Overview: dashboard chart grid ---- */
+.ov-charts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+@media (max-width: 900px) {
+  .ov-charts { grid-template-columns: 1fr; }
+}
+.chart-card {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 0.9rem 1rem 1.1rem;
+}
+
+.bar-chart { display: flex; flex-direction: column; gap: 0.5rem; }
+.bar-chart-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 44px;
+  align-items: center;
+  gap: 0.6rem;
+}
+.bar-chart-label {
+  font-size: 0.76rem;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar-chart-track {
+  background: var(--surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.bar-chart-fill { height: 100%; border-radius: 4px; }
+.bar-chart-value {
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  text-align: right;
+}
+
+.donut-chart { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.donut-total { fill: var(--ink); font-size: 1.1rem; font-weight: 700; }
+.donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+.donut-legend b { color: var(--ink); font-variant-numeric: tabular-nums; margin-left: 0.3rem; }
+.donut-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 0.4rem;
 }

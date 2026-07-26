@@ -430,3 +430,20 @@ export const fetchSimilarPersons = (q: { name: string; age?: number | null; sex?
     age: q.age ?? undefined,
     sex: q.sex ?? undefined,
   });
+
+// --- overview dashboard charts (district/status/crime/age aggregates) ---
+
+export interface CountRow {
+  count: number;
+  [key: string]: string | number;
+}
+
+export interface OverviewCharts {
+  synthetic: boolean;
+  by_district: { district_name: string; count: number }[];
+  by_status: { status: string; count: number }[];
+  by_crime_type: { crime_type: string; count: number }[];
+  by_age_band: { age_band: string; count: number }[];
+}
+
+export const fetchOverviewCharts = () => getJSON<OverviewCharts>("/api/overview/charts");

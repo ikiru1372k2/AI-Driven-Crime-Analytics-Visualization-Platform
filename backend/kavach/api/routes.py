@@ -442,3 +442,15 @@ def get_overview() -> dict:
             ),
         ),
     }
+
+@router.get("/overview/charts")
+def get_overview_charts() -> dict:
+    """Aggregate counts powering the Overview dashboard's charts."""
+    return {
+        **data.overview_charts(),
+        "intelligence": envelope(
+            classification=DataClassification.DERIVED_METRIC,
+            method_name="overview_chart_aggregation",
+            method_version="1.0.0",
+        ),
+    }
