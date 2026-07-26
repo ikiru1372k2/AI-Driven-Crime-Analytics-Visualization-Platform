@@ -11,7 +11,6 @@ import { useEffect, useState } from "react";
 import {
   fetchMoCase,
   fetchMoProfiles,
-  fetchMoRun,
   fetchMoStatus,
   fetchMoVocabulary,
   fetchRelated,
@@ -109,12 +108,6 @@ export function MoView() {
 
 const UNKNOWN = "UNKNOWN";
 
-function confidenceClass(v: number): string {
-  if (v >= 0.85) return "hi";
-  if (v >= 0.7) return "mid";
-  return "lo";
-}
-
 /** Narrative with the active attribute's source span highlighted. */
 function Narrative({ text, span }: { text: string; span: [number, number] | null }) {
   if (!span || span[0] >= span[1] || span[1] > text.length) {
@@ -130,9 +123,8 @@ function Narrative({ text, span }: { text: string; span: [number, number] | null
 }
 
 function MoConsole() {
-  // Static run stats + filter vocabulary — cached so revisiting the tab is
-  // instant (PERF-001). The profile list stays server-paged/debounced below.
-  const { data: run = null } = useCachedQuery("mo:run", fetchMoRun);
+  // Filter vocabulary — cached so revisiting the tab is instant (PERF-001).
+  // The profile list stays server-paged/debounced below.
   const { data: vocab = null } = useCachedQuery("mo:vocab", fetchMoVocabulary);
   const [rows, setRows] = useState<MoListRow[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -206,32 +198,8 @@ function MoConsole() {
       <aside className="mo-rail">
         <div className="brand">
           <h1>MO Profiles</h1>
-          <p>UNDERSTAND · structured modus operandi from FIR narratives</p>
+          <p>Search how crimes were committed</p>
         </div>
-
-        {run && (
-          <div className="mo-run">
-            <p className="section-label">Extraction run</p>
-            <dl className="metric-grid">
-              <dt>Extractor</dt>
-              <dd>{run.extractor}</dd>
-              <dt>Profiles</dt>
-              <dd>
-                {run.processed} extracted · {run.failed} failed · {run.skipped} skipped
-              </dd>
-              <dt>Method</dt>
-              <dd>
-                <code>{run.model_version}</code>
-              </dd>
-            </dl>
-            {run.zia_unavailable_reason && (
-              <p className="muted small" title={run.zia_unavailable_reason}>
-                Extracted on the deterministic path — every value is still anchored to
-                the narrative and validated against the MO schema.
-              </p>
-            )}
-          </div>
-        )}
 
         <p className="section-label">Find a case</p>
         <input
@@ -364,19 +332,17 @@ function MoConsole() {
           <>
             <div className="mo-panel">
               <header className="mo-panel-head">
-                <strong>FIR {detail.case_master_id} — narrative</strong>
-                <span className="badge">{detail.intelligence.classification_label}</span>
+                <strong>FIR {detail.case_master_id}</strong>
               </header>
               <Narrative text={detail.narrative} span={span} />
               <p className="muted small">
-                Hover an attribute to highlight the words it was extracted from.
+                Hover a value below to highlight where it came from.
               </p>
             </div>
 
             <div className="mo-panel">
               <header className="mo-panel-head">
-                <strong>Extracted MO</strong>
-                <code className="muted small">{detail.profile.extractor}</code>
+                <strong>How it was committed</strong>
               </header>
               <ul className="mo-attrs">
                 {MO_FIELDS.map(({ key, label }) => {
@@ -397,39 +363,28 @@ function MoConsole() {
                       tabIndex={0}
                     >
                       <span className="mo-attr-label">{label}</span>
-                      <span className="mo-attr-value">{String(attr.value)}</span>
-                      <span className={"mo-conf " + confidenceClass(attr.confidence)}>
-                        {(attr.confidence * 100).toFixed(0)}%
+                      <span className="mo-attr-value">
+                        {isUnknown ? "—" : String(attr.value)}
                       </span>
                     </li>
                   );
                 })}
               </ul>
-              <p className="muted small">
-                UNKNOWN means the narrative contains no evidence for that attribute — it
-                is never guessed.
-              </p>
-              {detail.intelligence.limitations?.map((l) => (
-                <p key={l} className="muted small">
-                  {l}
-                </p>
-              ))}
+              <p className="muted small">A dash means the narrative didn’t say.</p>
 
               <button className="expand" onClick={showRelated} disabled={loadingRelated}>
-                {loadingRelated ? "finding…" : "Show cases with a similar MO"}
+                {loadingRelated ? "finding…" : "Show similar cases"}
               </button>
             </div>
 
             {related !== null && (
               <div className="mo-panel">
                 <header className="mo-panel-head">
-                  <strong>Similar MO ({related.length})</strong>
-                  <span className="badge">Potential association — unconfirmed</span>
+                  <strong>Similar cases ({related.length})</strong>
                 </header>
                 {related.length === 0 && (
                   <p className="muted small">
-                    No case shares enough stated attributes with this one. Narratives
-                    that simply omit details are never counted as agreement.
+                    No other case was committed in a similar enough way.
                   </p>
                 )}
                 <ul className="mo-related">
@@ -447,11 +402,6 @@ function MoConsole() {
                     </li>
                   ))}
                 </ul>
-                {related.length > 0 && (
-                  <p className="muted small">
-                    A lead to check — not a finding that the same person is responsible.
-                  </p>
-                )}
               </div>
             )}
           </>
