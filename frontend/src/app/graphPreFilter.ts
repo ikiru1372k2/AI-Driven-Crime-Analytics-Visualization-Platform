@@ -28,10 +28,11 @@ export const AGE_BAND = 5;
 /**
  * Build the default filter for a fresh expansion of `type`.
  *
- * We pre-fill crime type, district, suspect gender, an age band and the
- * suspect's first name — dropping whatever the focus already fixes (redundant),
- * and, for the same-person (accused) channel, dropping everything but the crime
- * type so identity variants aren't filtered out.
+ * We pre-fill crime type, district, suspect gender and an age band — dropping
+ * whatever the focus already fixes (redundant). We do NOT pre-fill the suspect's
+ * name (that would narrow an expansion to one person; see below). For the
+ * same-person (accused) channel we drop everything but the crime type so
+ * identity variants aren't filtered out.
  *
  * Seed attributes come from the overview load (`seed`); if that hasn't populated
  * yet we fall back to the graph's own crime-type + district nodes (`nodes`), so
@@ -58,7 +59,11 @@ export function buildPreFilter(
     return subheadId ? { subhead_id: subheadId } : {};
   }
 
-  // Otherwise (district / crime / station) build the full similar-profile set.
+  // Otherwise (district / crime / station) build the similar-profile set from
+  // the seed's attributes (crime type, district) and the suspect's age/gender
+  // band. We deliberately do NOT pre-fill the suspect's name: an expansion asks
+  // "what similar cases turned up here?", and pinning it to one name would drop
+  // every case involving anyone else. The user can still add a name via Filter.
   const f: AssocFilters = {};
   if (type !== "CRIME_SUBHEAD" && type !== "CRIME_HEAD" && subheadId) f.subhead_id = subheadId;
   if (type !== "DISTRICT" && districtId) f.district_id = districtId;
@@ -66,10 +71,6 @@ export function buildPreFilter(
   if (seed?.accused_age != null) {
     f.age_min = Math.max(0, seed.accused_age - AGE_BAND);
     f.age_max = Math.min(120, seed.accused_age + AGE_BAND);
-  }
-  if (seed?.accused_name) {
-    const firstName = seed.accused_name.trim().split(/\s+/)[0];
-    if (firstName) f.name_contains = firstName;
   }
   return f;
 }

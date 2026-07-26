@@ -208,7 +208,10 @@ export function buildPersonGraph(person: PersonDetail): {
       node_id: caseNodeId,
       node_type: "CASE",
       entity_ref_id: c.case_id,
-      label: c.crime_no ?? c.subhead_name ?? `Case ${c.case_id}`,
+      // Label by case number, matching every other CASE node in the graph
+      // (the backend engine labels these "Case {CaseMasterID}"). Showing the
+      // FIR crime_no here made the same case read differently across views.
+      label: `Case ${c.case_id}`,
       depth: 1,
     });
     edges.set(`${centerId}->${caseNodeId}`, {
