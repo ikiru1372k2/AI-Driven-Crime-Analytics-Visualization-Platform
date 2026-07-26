@@ -1,0 +1,46 @@
+{
+  "voice": "en-IN-PrabhatNeural",
+  "rate": "+10%",
+  "scenes": [
+    {
+      "id": "01_cold_open",
+      "min_secs": 18,
+      "text": "Every day, police stations across Karnataka file hundreds of F I Rs. The intelligence inside them is real \u2014 but it's locked away in free text. KAVACH A I unlocks it. Built end-to-end on Zoho Catalyst, running entirely on synthetic data \u2014 sixteen thousand six hundred and fifty-two cases."
+    },
+    {
+      "id": "02_trends",
+      "min_secs": 20,
+      "text": "This is the State Intelligence Overview \u2014 an officer's morning briefing. Emerging trends, ranked by how far they deviate from normal. The moment crime accelerates anywhere in the state, KAVACH flags it \u2014 what changed, where, and by how much. No spreadsheets. Just focus."
+    },
+    {
+      "id": "03_geospatial",
+      "min_secs": 24,
+      "text": "One click, and those numbers hit the ground. Ranked crime hotspots \u2014 this is hotspot number one for this district. Filters narrow by crime type, district, and time window, and stations with an active alert pulse on the map. And every view is a U R L \u2014 this exact picture can be shared with a field officer as a single link."
+    },
+    {
+      "id": "04_mo_hero",
+      "min_secs": 36,
+      "text": "Here's where KAVACH goes beyond dashboards. M O Profiles reads every F I R narrative and extracts how the crime was committed. I search one word \u2014 chain \u2014 and open a case. Now watch: hovering an extracted value highlights the exact words it came from. And if the narrative didn't say it? KAVACH shows a dash. It never guesses. One more click \u2014 and here are the other cases committed the same way. From a single F I R to a pattern, in seconds."
+    },
+    {
+      "id": "05_networks",
+      "min_secs": 22,
+      "text": "Networks turns a single case into a living graph \u2014 the accused, the victims, and every connected case around F I R seven two three one. Exploring the graph walks the web outward. This is how investigators find the non-obvious link \u2014 the person who quietly appears in two unrelated cases."
+    },
+    {
+      "id": "06_identities",
+      "min_secs": 22,
+      "text": "Identities ranks accused by how many crimes they're involved in \u2014 then finds likely duplicate records: the same person, spelled differently across F I Rs. Every match shows its supporting and contradicting evidence. A lead for review \u2014 never an automatic accusation. In policing, that distinction is everything."
+    },
+    {
+      "id": "07_anomalies_risk",
+      "min_secs": 14,
+      "text": "Anomalies flags the cases that break the pattern \u2014 corroborated by an Isolation Forest model. And Area Risk forecasts where pressure builds next. Detection, explanation, and foresight \u2014 one platform."
+    },
+    {
+      "id": "08_close",
+      "min_secs": 12,
+      "text": "And every A I answer in KAVACH carries its method, its model version, and its limitations \u2014 on the record. Explainable. Ethical. Deployed. This is KAVACH A I."
+    }
+  ]
+}
