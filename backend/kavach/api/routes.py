@@ -54,20 +54,26 @@ def get_cases(
     date_to: str | None = Query(default=None, description="YYYY-MM-DD (inclusive)"),
     with_coords: bool = Query(default=True, description="only geolocated cases"),
     limit: int | None = Query(default=None, ge=1, le=10000),
+    offset: int = Query(default=0, ge=0, description="page offset into the filtered cases"),
 ) -> dict:
-    """Filtered case rows for the map / list views."""
-    rows = data.case_records(
+    """Filtered case rows for the map / list / graph views.
+
+    ``offset``/``limit`` page the result; ``total`` is the full count behind the
+    page so a client can drive pagination (e.g. all cases in a district)."""
+    filters = dict(
         subhead_id=subhead_id,
         district_id=district_id,
         station_id=station_id,
         date_from=date_from,
         date_to=date_to,
         with_coords=with_coords,
-        limit=limit,
     )
+    rows = data.case_records(**filters, limit=limit, offset=offset)
     return {
         "synthetic": True,
         "count": len(rows),
+        "total": data.case_count(**filters),
+        "offset": offset,
         "cases": rows,
         "intelligence": envelope(**_FACT_ENVELOPE),
     }

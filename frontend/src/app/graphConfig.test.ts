@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPersonGraph } from "./graphConfig";
+import { buildAreaGraph, buildPersonGraph, SEED_TYPES } from "./graphConfig";
 import type { PersonDetail } from "../lib/graphApi";
 
 /** A victim who is named on two cases — one with a crime_no (FIR), one without. */
@@ -60,5 +60,45 @@ describe("buildPersonGraph — case node labels (Issue 1)", () => {
     expect(centerId).toBe("VICTIM_RECORD:99");
     expect(nodes.get(centerId)?.label).toBe("Asha");
     expect(edges.size).toBe(2);
+  });
+});
+
+describe("SEED_TYPES — accused person removed", () => {
+  it("offers only case, police station and district as seeds", () => {
+    expect(SEED_TYPES).toEqual(["CASE", "POLICE_STATION", "DISTRICT"]);
+    expect(SEED_TYPES).not.toContain("ACCUSED_RECORD");
+  });
+});
+
+describe("buildAreaGraph — district / police-station area views", () => {
+  const cases = [{ CaseMasterID: "7231" }, { CaseMasterID: "8100" }];
+
+  it("centers on the district with one case-numbered node per case", () => {
+    const { nodes, edges, centerId } = buildAreaGraph(
+      "DISTRICT",
+      "44",
+      "Bengaluru City",
+      cases,
+    );
+    expect(centerId).toBe("DISTRICT:44");
+    expect(nodes.get(centerId)?.label).toBe("Bengaluru City");
+    expect(nodes.get("CASE:7231")?.label).toBe("Case 7231");
+    expect(nodes.get("CASE:8100")?.label).toBe("Case 8100");
+    // center + 2 cases; one edge center->case each
+    expect(nodes.size).toBe(3);
+    expect(edges.size).toBe(2);
+    expect([...edges.values()][0].relationship_type).toBe("IN_DISTRICT");
+  });
+
+  it("labels a police-station center and uses AT_STATION edges", () => {
+    const { nodes, edges, centerId } = buildAreaGraph(
+      "POLICE_STATION",
+      "4430",
+      "Peenya PS",
+      cases,
+    );
+    expect(centerId).toBe("POLICE_STATION:4430");
+    expect(nodes.get(centerId)?.label).toBe("Peenya PS");
+    expect([...edges.values()].every((e) => e.relationship_type === "AT_STATION")).toBe(true);
   });
 });

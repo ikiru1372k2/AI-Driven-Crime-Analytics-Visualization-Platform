@@ -135,7 +135,7 @@ _CASE_FIELDS = [
 ]
 
 
-def case_records(
+def _filtered_cases(
     *,
     subhead_id: int | None = None,
     district_id: int | None = None,
@@ -143,9 +143,11 @@ def case_records(
     date_from: str | None = None,
     date_to: str | None = None,
     with_coords: bool = True,
-    limit: int | None = None,
-) -> list[dict]:
-    """Filtered, JSON-ready case rows for the map/list views."""
+) -> pd.DataFrame:
+    """The enriched-case frame narrowed by the shared case filters (no slicing).
+
+    Extracted so ``case_records`` (a page of rows) and ``case_count`` (the total
+    behind that page) apply exactly the same predicates."""
     df = enriched_cases()
     if with_coords:
         df = df[df["latitude"].notna() & df["longitude"].notna()]
@@ -159,13 +161,65 @@ def case_records(
         df = df[df["registered_date"] >= pd.to_datetime(date_from)]
     if date_to:
         df = df[df["registered_date"] <= pd.to_datetime(date_to)]
-    if limit is not None:
-        df = df.head(limit)
+    return df
 
+
+def _serialize_cases(df: pd.DataFrame) -> list[dict]:
+    """The client-facing case fields, dates formatted, NaNs → None."""
     out = df[_CASE_FIELDS].copy()
     out["registered_date"] = out["registered_date"].dt.strftime("%Y-%m-%d")
     out["incident_from"] = out["incident_from"].dt.strftime("%Y-%m-%d %H:%M")
     return out.where(out.notna(), None).to_dict(orient="records")
+
+
+def case_records(
+    *,
+    subhead_id: int | None = None,
+    district_id: int | None = None,
+    station_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    with_coords: bool = True,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict]:
+    """Filtered, JSON-ready case rows for the map/list/graph views.
+
+    ``offset``/``limit`` page the (deterministically ordered) result; pair with
+    ``case_count`` for the full total behind the page."""
+    df = _filtered_cases(
+        subhead_id=subhead_id,
+        district_id=district_id,
+        station_id=station_id,
+        date_from=date_from,
+        date_to=date_to,
+        with_coords=with_coords,
+    )
+    if limit is not None:
+        df = df.iloc[offset:offset + limit]
+    elif offset:
+        df = df.iloc[offset:]
+    return _serialize_cases(df)
+
+
+def case_count(
+    *,
+    subhead_id: int | None = None,
+    district_id: int | None = None,
+    station_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    with_coords: bool = True,
+) -> int:
+    """Total cases matching the filters (the universe an offset/limit pages)."""
+    return int(len(_filtered_cases(
+        subhead_id=subhead_id,
+        district_id=district_id,
+        station_id=station_id,
+        date_from=date_from,
+        date_to=date_to,
+        with_coords=with_coords,
+    )))
 
 
 def case_detail(case_id: int) -> dict | None:

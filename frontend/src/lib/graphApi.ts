@@ -217,6 +217,39 @@ export function fetchAssociations(
   return get(`/api/associations?${p}`);
 }
 
+/** One case row from /api/cases as the area-cases view needs it (the node id
+ *  is CaseMasterID; other fields power the case-click panel via fetchCaseBasic). */
+export interface AreaCase {
+  CaseMasterID: string;
+  CrimeNo: string | null;
+}
+
+export interface AreaCasesResult {
+  /** cases on THIS page. */
+  count: number;
+  /** full number of cases in the area (drives pagination). */
+  total: number;
+  offset: number;
+  cases: AreaCase[];
+}
+
+/** All cases in a district or police station, paged — the seed views for a
+ *  DISTRICT / POLICE_STATION graph. No association filters: every case in the
+ *  area, straight from /api/cases (with_coords off so ungeocoded cases count). */
+export function fetchAreaCases(
+  kind: "district" | "station",
+  id: string,
+  page: { limit: number; offset: number },
+): Promise<AreaCasesResult> {
+  const p = new URLSearchParams({
+    with_coords: "false",
+    limit: String(page.limit),
+    offset: String(page.offset),
+  });
+  p.set(kind === "district" ? "district_id" : "station_id", id);
+  return get(`/api/cases?${p}`);
+}
+
 /** One case a person is named on — a light FIR restatement (no graph metrics). */
 export interface PersonCase {
   case_id: string;
