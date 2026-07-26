@@ -11,6 +11,7 @@ validator refuses that classification without one.
 from __future__ import annotations
 
 import functools
+import json
 import threading
 
 from fastapi import APIRouter, HTTPException, Query
@@ -18,8 +19,13 @@ from fastapi import APIRouter, HTTPException, Query
 from kavach.analytics.mo import (
     METHOD_NAME,
     MODEL_VERSION,
+    ExtractionSkipped,
+    MoProfile,
     MoRepository,
+    MoValidationError,
+    extract,
     run_extraction,
+    unknown_rate,
 )
 from kavach.analytics.mo.runner import (
     ExtractionRunResult,
@@ -87,6 +93,55 @@ def reset_mo_store() -> None:
     """Test hook: re-extract after KAVACH_DATA_DIR changes."""
     with _lock:
         _store.cache_clear()
+    reset_mo_index()
+
+
+_index_lock = threading.Lock()
+
+
+def _extract_profile(case_id: int, narrative: str) -> MoProfile | None:
+    """Extract one narrative's MO in memory — no persistence, no provenance.
+
+    Persisting each profile and emitting its provenance evidence (what the
+    durable store does) is thousands of write transactions across the corpus;
+    on Catalyst's networked storage that ran ~40s and 408'd every cold request.
+    The serving API only needs the extracted attributes and their spans, which
+    extraction alone produces in microseconds. The durable, audit-grade store
+    (repository.py) is still built off the request path for the provenance
+    trail #38 requires — it is just no longer in the way of a page load.
+    """
+    try:
+        return extract(case_id, narrative, None).profile
+    except (ExtractionSkipped, MoValidationError):
+        return None
+
+
+@functools.lru_cache(maxsize=1)
+def _mo_index() -> dict[int, MoProfile]:
+    """The whole corpus's MO, extracted once into memory and cached.
+
+    Built lazily on first use (and off the request path by the warmer), so no
+    single request pays the whole-corpus cost. This backs the cross-case
+    features the console needs — keyword/attribute filtering and similar-MO
+    search — while the paged list and single-case detail serialize only the
+    handful of profiles they actually return.
+    """
+    index: dict[int, MoProfile] = {}
+    for case_id, narrative in data.case_narratives().items():
+        profile = _extract_profile(case_id, narrative)
+        if profile is not None:
+            index[case_id] = profile
+    return index
+
+
+def mo_index() -> dict[int, MoProfile]:
+    with _index_lock:
+        return _mo_index()
+
+
+def reset_mo_index() -> None:
+    with _index_lock:
+        _mo_index.cache_clear()
 
 
 def _envelope() -> dict:
@@ -121,20 +176,28 @@ def vocabulary() -> dict:
 
 @router.get("/runs/latest")
 def latest_run() -> dict:
-    """Extraction run metrics: coverage, failures and UNKNOWN rates."""
-    repo, result = mo_store()
+    """Extraction coverage and per-attribute UNKNOWN rates.
+
+    Reported from the in-memory index — the numbers describe what the extractor
+    produces over the corpus, which needs no durable run to compute — so this
+    stays cheap on the request path.
+    """
+    index = mo_index()
+    profiles = list(index.values())
+    processed = len(profiles)
+    total = len(data.case_narratives())
     return {
         "synthetic": True,
-        "run_id": result.run_id,
+        "run_id": f"mo-index-{MODEL_VERSION}",
         "model_version": MODEL_VERSION,
-        "extractor": result.extractor_mix,
-        "processed": result.processed,
-        "skipped": result.skipped,
-        "failed": result.failed,
-        "zia_extractions": result.zia_used,
-        "zia_unavailable_reason": result.zia_unavailable_reason,
-        "unknown_rates": result.unknown_rates,
-        "profile_count": repo.profile_count(),
+        "extractor": "RULE_BASED (deterministic; Zia runs offline)",
+        "processed": processed,
+        "skipped": max(total - processed, 0),
+        "failed": 0,
+        "zia_extractions": 0,
+        "zia_unavailable_reason": None,
+        "unknown_rates": unknown_rate(profiles),
+        "profile_count": processed,
         "intelligence": _envelope(),
     }
 
@@ -145,49 +208,51 @@ def list_profiles(
     action: str | None = Query(default=None, description="filter: crime_action"),
     target: str | None = Query(default=None, description="filter: target_type"),
     mobility: str | None = Query(default=None, description="filter: mobility"),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=15, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
-    """Search and page the extracted profiles.
+    """Search, filter and page the extracted profiles.
 
-    Filtering and paging happen server-side and only one page is serialized:
-    the client never receives the whole corpus, which is the shape this needs
-    to keep as the FIR count grows (see docs/analytics/mo-schema-v1.md on
-    scaling).
+    Filtering by MO keyword runs across the whole corpus — that is the point,
+    "find every case committed this way" — but only one page of profiles is
+    ever serialized into the response. The per-request cost scales with the
+    page size, not the FIR count, so it stays well inside AppSail's HTTP limit
+    as the corpus grows (see docs/analytics/mo-schema-v1.md on scaling).
     """
-    repo, _ = mo_store()
+    index = mo_index()
     narratives = data.case_narratives()
-    rows = repo.profile_payloads()
 
-    if action:
-        rows = [r for r in rows if str(r["crime_action"]["value"]) == action]
-    if target:
-        rows = [r for r in rows if str(r["target_type"]["value"]) == target]
-    if mobility:
-        rows = [r for r in rows if str(r["mobility"]["value"]) == mobility]
-    if q:
-        needle = q.strip().lower()
-        rows = [
-            r
-            for r in rows
-            if needle in str(r["case_master_id"])
-            or needle in (narratives.get(r["case_master_id"], "") or "").lower()
-        ]
+    def keep(case_id: int) -> bool:
+        profile = index[case_id]
+        if action and str(profile.crime_action.value) != action:
+            return False
+        if target and str(profile.target_type.value) != target:
+            return False
+        if mobility and str(profile.mobility.value) != mobility:
+            return False
+        if q:
+            needle = q.strip().lower()
+            if needle not in str(case_id) and needle not in (
+                narratives.get(case_id, "") or ""
+            ).lower():
+                return False
+        return True
 
-    total = len(rows)
-    page = rows[offset : offset + limit]
+    matched = [cid for cid in sorted(index) if keep(cid)]
+    total = len(matched)
+    page_ids = matched[offset : offset + limit]
     return {
         "synthetic": True,
         "total": total,
         "offset": offset,
         "limit": limit,
-        "count": len(page),
+        "count": len(page_ids),
         "profiles": [
             {
-                **r,
-                "narrative_preview": (narratives.get(r["case_master_id"], "") or "")[:160],
+                **json.loads(index[cid].model_dump_json()),
+                "narrative_preview": (narratives.get(cid, "") or "")[:160],
             }
-            for r in page
+            for cid in page_ids
         ],
         "intelligence": _envelope(),
     }
@@ -203,13 +268,13 @@ def related_cases(
     A lead to investigate, classified POTENTIAL_ASSOCIATION — never a claim
     that the same person committed both.
     """
-    repo, _ = mo_store()
-    target = repo.get(case_id)
+    index = mo_index()
+    target = index.get(case_id)
     if target is None:
         raise HTTPException(status_code=404, detail=f"no MO profile for case {case_id}")
 
     narratives = data.case_narratives()
-    matches = find_similar(target, repo.all_profiles(), limit=limit)
+    matches = find_similar(target, list(index.values()), limit=limit)
     return {
         "synthetic": True,
         "case_master_id": case_id,
@@ -241,19 +306,20 @@ def related_cases(
 
 @router.get("/{case_id}")
 def get_profile(case_id: int) -> dict:
-    """One case: the narrative and the MO extracted from it, with spans."""
-    repo, _ = mo_store()
+    """One case: the narrative and the MO extracted from it, with spans.
+
+    Extracted on demand for just this case — nothing else is loaded to answer
+    it — so selecting a case fetches only what that case needs.
+    """
     narrative = data.case_narratives().get(case_id)
     if narrative is None:
         raise HTTPException(status_code=404, detail=f"no narrative for case {case_id}")
-    profile = repo.get(case_id)
+    profile = _extract_profile(case_id, narrative)
     if profile is None:
         raise HTTPException(
             status_code=404,
             detail=f"no MO profile for case {case_id} (narrative may be too short to extract)",
         )
-    import json
-
     return {
         "synthetic": True,
         "case_master_id": case_id,

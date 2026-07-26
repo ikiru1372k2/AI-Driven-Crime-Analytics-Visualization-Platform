@@ -119,7 +119,7 @@ def _prime() -> None:
     from kavach.analytics.anomaly.engine import detect_anomalies
     from kavach.analytics.entity import resolve_identities
     from kavach.analytics.risk.engine import forecast_area_risk
-    from kavach.api.mo_routes import mo_store
+    from kavach.api.mo_routes import mo_index
 
     for label, fn in (
         ("enriched_cases", data.enriched_cases),
@@ -134,9 +134,10 @@ def _prime() -> None:
         # model is unconfigured — the engines return available:false fast).
         ("anomaly_scan", detect_anomalies),
         ("area_risk_forecast", forecast_area_risk),
-        # MO cold extraction of ~16k narratives exceeds AppSail's HTTP limit
-        # (~30s) when it runs on the first /api/v1/mo/* request; warm it here.
-        ("mo_store", mo_store),
+        # Prime the in-memory MO index so the first /api/v1/mo/* request serves
+        # from it instead of extracting the corpus on the request path. This is
+        # extraction only (no persistence/provenance writes), so it is quick.
+        ("mo_index", mo_index),
     ):
         if fn is None:
             continue

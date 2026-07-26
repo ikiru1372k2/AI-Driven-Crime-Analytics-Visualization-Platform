@@ -22,7 +22,7 @@ import {
 import { useCachedQuery } from "../lib/queryCache";
 import { Spinner } from "./Loading";
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 15;
 
 const UNKNOWN = "UNKNOWN";
 
