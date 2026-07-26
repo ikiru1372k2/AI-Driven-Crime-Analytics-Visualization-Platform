@@ -235,6 +235,23 @@ export function buildPersonGraph(person: PersonDetail): {
   return { nodes, edges, centerId };
 }
 
+/** Resolve a district/station id to its display name from the meta lookups
+ *  (falls back to a "District 44" style label until meta has loaded). */
+export function areaLabelFor(
+  meta: { districts: { district_id: string; district_name: string }[]; stations: { station_id: string; station_name: string }[] } | null,
+  type: "DISTRICT" | "POLICE_STATION",
+  id: string,
+): string {
+  if (type === "DISTRICT")
+    return (
+      meta?.districts.find((d) => String(d.district_id) === String(id))?.district_name ??
+      `District ${id}`
+    );
+  return (
+    meta?.stations.find((s) => String(s.station_id) === String(id))?.station_name ?? `Station ${id}`
+  );
+}
+
 /** Build an area-centered graph: a DISTRICT or POLICE_STATION at the center with
  *  one CASE node per case in that area (a page of them) and a center->case edge.
  *  The link is a plain FACT restatement (the case is recorded in this area — no
