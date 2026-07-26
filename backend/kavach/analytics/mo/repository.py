@@ -39,8 +39,19 @@ _FAILED_DDL = """CREATE TABLE IF NOT EXISTS MoExtractionFailure (
 class MoRepository:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
+        # The profile corpus is loaded once per process (see _store in
+        # api/mo_routes.py) and only mutated by save(); every read endpoint
+        # otherwise re-validated and re-serialized all ~16k rows on each
+        # request, which timed the function out. Memoize the full-corpus reads
+        # and drop the caches whenever a write lands.
+        self._profiles_cache: dict[str | None, list[MoProfile]] = {}
+        self._payload_cache: dict[str | None, list[dict]] = {}
         conn.execute(_DDL)
         conn.execute(_FAILED_DDL)
+
+    def _invalidate(self) -> None:
+        self._profiles_cache.clear()
+        self._payload_cache.clear()
 
     def save(self, profile: MoProfile, run_id: str) -> None:
         """Upsert one validated profile. Only called after validation."""
@@ -62,6 +73,7 @@ class MoRepository:
                     run_id,
                 ),
             )
+        self._invalidate()
 
     def record_failure(
         self, case_master_id: int, model_version: str, reason: str, run_id: str
@@ -86,16 +98,18 @@ class MoRepository:
         return None if row is None else MoProfile.model_validate_json(row["profile_json"])
 
     def all_profiles(self, model_version: str | None = None) -> list[MoProfile]:
-        sql = "SELECT profile_json FROM MoProfile"
-        params: list = []
-        if model_version:
-            sql += " WHERE model_version = ?"
-            params.append(model_version)
-        sql += " ORDER BY case_master_id"
-        return [
-            MoProfile.model_validate_json(r["profile_json"])
-            for r in self._conn.execute(sql, params).fetchall()
-        ]
+        if model_version not in self._profiles_cache:
+            sql = "SELECT profile_json FROM MoProfile"
+            params: list = []
+            if model_version:
+                sql += " WHERE model_version = ?"
+                params.append(model_version)
+            sql += " ORDER BY case_master_id"
+            self._profiles_cache[model_version] = [
+                MoProfile.model_validate_json(r["profile_json"])
+                for r in self._conn.execute(sql, params).fetchall()
+            ]
+        return self._profiles_cache[model_version]
 
     def failure_count(self, model_version: str | None = None) -> int:
         sql = "SELECT COUNT(*) AS n FROM MoExtractionFailure"
@@ -105,6 +119,32 @@ class MoRepository:
             params.append(model_version)
         return int(self._conn.execute(sql, params).fetchone()["n"])
 
+    def profile_count(self, model_version: str | None = None) -> int:
+        """How many profiles exist — counted in SQL, without materializing them."""
+        sql = "SELECT COUNT(*) AS n FROM MoProfile"
+        params: list = []
+        if model_version:
+            sql += " WHERE model_version = ?"
+            params.append(model_version)
+        return int(self._conn.execute(sql, params).fetchone()["n"])
+
     def profile_payloads(self, model_version: str | None = None) -> list[dict]:
-        """Profiles as plain dicts (API serialization)."""
-        return [json.loads(p.model_dump_json()) for p in self.all_profiles(model_version)]
+        """Profiles as plain dicts (API serialization).
+
+        Read straight from the stored JSON: the rows were validated on save, so
+        parsing the text once beats the model_validate_json -> model_dump_json
+        -> json.loads round-trip this used to do over the whole corpus per
+        request. Memoized because the corpus is immutable between writes.
+        """
+        if model_version not in self._payload_cache:
+            sql = "SELECT profile_json FROM MoProfile"
+            params: list = []
+            if model_version:
+                sql += " WHERE model_version = ?"
+                params.append(model_version)
+            sql += " ORDER BY case_master_id"
+            self._payload_cache[model_version] = [
+                json.loads(r["profile_json"])
+                for r in self._conn.execute(sql, params).fetchall()
+            ]
+        return self._payload_cache[model_version]

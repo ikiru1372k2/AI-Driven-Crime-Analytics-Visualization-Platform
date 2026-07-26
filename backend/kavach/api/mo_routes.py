@@ -134,7 +134,7 @@ def latest_run() -> dict:
         "zia_extractions": result.zia_used,
         "zia_unavailable_reason": result.zia_unavailable_reason,
         "unknown_rates": result.unknown_rates,
-        "profile_count": len(repo.all_profiles()),
+        "profile_count": repo.profile_count(),
         "intelligence": _envelope(),
     }
 
