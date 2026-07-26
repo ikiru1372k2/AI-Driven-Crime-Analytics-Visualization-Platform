@@ -194,7 +194,8 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
       setError(null);
       try {
         const kind = type === "DISTRICT" ? "district" : "station";
-        const res = await fetchAreaCases(kind, id, { limit: PAGE_SIZE, offset: pg * PAGE_SIZE });
+        const paging = { limit: PAGE_SIZE, offset: pg * PAGE_SIZE };
+        const res = await fetchAreaCases(kind, id, paging, filtersRef.current);
         const label = areaLabelFor(metaRef.current, type, id);
         const { nodes, edges, centerId } = buildAreaGraph(type, id, label, res.cases);
         setSubgraph(null);
@@ -325,11 +326,11 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
 
   // Applying a Filter re-runs the current expansion from the first page.
   const reloadExpansionsFiltered = useCallback(async () => {
-    if (activeFocusRef.current) {
-      setLoadingMsg("Filtering cases, please wait…");
-      await showFocus(activeFocusRef.current, 0);
-    }
-  }, [showFocus]);
+    if (!areaRef.current && !activeFocusRef.current) return;
+    setLoadingMsg("Filtering cases, please wait…");
+    if (areaRef.current) await showArea(areaRef.current.type, areaRef.current.id, 0);
+    else await showFocus(activeFocusRef.current!, 0);
+  }, [showArea, showFocus]);
   // page through a large expansion
   const gotoPage = useCallback(
     (pg: number) => {
@@ -542,7 +543,8 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
         )}
         <GraphControls
           showView={!drilled && !areaMode}
-          showFilter={drilled && !areaMode}
+          showFilter={drilled || areaMode}
+          areaMode={areaMode}
           viewDims={viewDims}
           onToggleDim={(k) =>
             setViewDims((prev) => {
