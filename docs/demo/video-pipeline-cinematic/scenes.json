@@ -1,0 +1,66 @@
+{
+  "voice": "en-IN-PrabhatNeural",
+  "rate": "+5%",
+  "scenes": [
+    {
+      "id": "01_problem",
+      "min_secs": 24,
+      "text": "Every day, police stations across Karnataka file hundreds of first-information reports. The intelligence inside them is real — but it is locked in free text, spread across tables, and invisible at state scale. KAVACH A I was built to unlock it. Sixteen thousand six hundred and fifty-two synthetic cases, three years of data, running end-to-end on Zoho Catalyst."
+    },
+    {
+      "id": "02_briefing",
+      "min_secs": 32,
+      "text": "The day starts here — the state intelligence overview. This alert is not a notification; it is a statistical finding. Robbery at Peenya police station is running at thirty cases a fortnight against a baseline of four a week — a two-hundred-and-seventy-five percent deviation, eleven standard deviations out, with ten weeks of history right on the card. An officer can acknowledge it — and below, the state breaks down by district, F I R status, crime type, and the age profile of accused persons."
+    },
+    {
+      "id": "03_map",
+      "min_secs": 38,
+      "text": "But a number without a place is only half the truth — so the same intelligence lands on the map. These are one hundred and twelve detected hotspots across Karnataka, each with a true radius in metres and its share of night-time crime. Hotspot number one: Jayanagar, two thousand seven hundred and ninety-one cases. The panel is marked A I derived, and this histogram shows exactly when incidents happen through the day — which is what patrol planning actually needs. Change the scope or the crime type on the left, and the map and its analytics update instantly. And stations with an active alert pulse, live, on this map."
+    },
+    {
+      "id": "04_timelapse",
+      "min_secs": 22,
+      "text": "And time is a dimension here, not a dropdown. Press play, and the map animates the last twelve months window by window — clusters growing, shifting, and dissolving as the window narrows to thirty days. Notice the address bar following along: every frame of this animation is itself a shareable link."
+    },
+    {
+      "id": "05_mo_search",
+      "min_secs": 30,
+      "text": "Knowing where crime happens is one thing — understanding how it is committed is another. M O Profiles reads every first-information report and extracts the modus operandi: the action, the target, the mobility. I type one word — chain — and the system searches every narrative in the corpus. In under a second, the gold-chain cases come back, each tagged with how the crime was done. And if typing is too slow, the same search runs from the attribute filters — every theft, every jewellery target, one selection away."
+    },
+    {
+      "id": "06_mo_evidence",
+      "min_secs": 32,
+      "text": "Here is the part that matters. This is the original narrative, and beside it, the extracted profile. When I hover an attribute, watch the narrative: the exact words that produced that value light up. Every single attribute is anchored to evidence in the text. And where the narrative says nothing — the system shows a dash. It does not guess. In an investigation, an honest unknown is worth more than a confident hallucination."
+    },
+    {
+      "id": "07_similar",
+      "min_secs": 24,
+      "text": "One click more — and KAVACH finds every case committed the same way. Fifteen matches, and each one states its reason: same offender count, same mobility, same action, same target. Two men, a motorcycle, a gold chain — a pattern an investigator can act on. And the label is deliberate: a potential association, never an assumption of guilt."
+    },
+    {
+      "id": "08_networks",
+      "min_secs": 40,
+      "text": "Patterns raise a harder question — who connects these cases? The association graph answers it with records, not speculation. Case seven-two-three-one at the centre; around it the accused, the victim, the station, the offence sections — nine kinds of entities, and every single edge cites the F I R it came from. Click any node — a town, a station, an accused — and the platform pulls every related case, with the active filters, like age range, shown beside the results and adjustable at any time. Find a case worth pursuing, and one click re-centres the entire graph around it. Pagination keeps it fast as the data grows."
+    },
+    {
+      "id": "09_identities",
+      "min_secs": 30,
+      "text": "The same person can appear across F I Rs with different spellings, ages, districts. Identities ranks every accused by case count — and for any one of them, runs a live similarity search across the whole state. Watch the evidence on each match: name agreement, same sex, age within a year — and contradictions are shown just as plainly. Every result is a lead for human review. The system never declares two records the same person."
+    },
+    {
+      "id": "10_anomalies",
+      "min_secs": 36,
+      "text": "Good intelligence also questions its own data. Using three years of history, the system learns what normal looks like for every station and every offence — then flags what does not fit. Twenty-five cases in the review queue, each with a deviation score in sigma, and a tick where an Isolation Forest model independently agrees with the statistics. Expand one, and the system explains itself in plain English: cyber fraud is unusual at Shivamogga Town because it is rare there — zero point nine percent. Two methods, one explanation, and a direct link to the F I R."
+    },
+    {
+      "id": "11_risk",
+      "min_secs": 40,
+      "text": "Everything so far looked at what has happened. Area Risk looks at what comes next: five hundred and thirty-three cases expected statewide in the next thirty days, and one headline — Mysuru, up twenty-two percent, needs attention this month. On the ladder, the bar is the forecast and the marker is today; the gap between them is momentum. Each number comes with a plain-language reason — Bengaluru City steady as robbery declines, Mysuru rising. The model is named, versioned, and labelled a guide, not a certainty — and it is built to sharpen as live records and external signals, like festivals and events, are added."
+    },
+    {
+      "id": "12_close",
+      "min_secs": 24,
+      "text": "From a free-text F I R to patterns, networks, identities, anomalies, and a thirty-day forecast — one connected workflow, and every A I answer carrying its method, its model version, and its limitations. Fully deployed on Zoho Catalyst, on synthetic data, ready for the real thing. From reactive policing to proactive, data-driven decisions — this is KAVACH A I. Thank you for watching."
+    }
+  ]
+}
