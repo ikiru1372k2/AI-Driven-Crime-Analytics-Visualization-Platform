@@ -139,9 +139,51 @@ def mo_index() -> dict[int, MoProfile]:
         return _mo_index()
 
 
+def index_ready() -> bool:
+    """True once the corpus index is built and cached — a cheap, non-blocking check."""
+    return _mo_index.cache_info().currsize > 0
+
+
+# --- non-blocking readiness -------------------------------------------------
+# Building the whole-corpus index can outlast AppSail's ~30s HTTP limit on a
+# cold process, so it is NEVER built inside a request. /status kicks the build
+# off on a background thread and returns immediately; the client shows a
+# "setting up" modal and polls until ready. Once cached, every later load (and
+# every process that the warmer primed) reports ready on the first check.
+_build_state: dict = {"status": "idle", "error": None}
+_build_thread: threading.Thread | None = None
+
+
+def _build_index_bg() -> None:
+    try:
+        mo_index()
+        _build_state.update(status="ready", error=None)
+    except Exception as exc:  # noqa: BLE001 - reported to the client, never crashes the thread
+        _build_state.update(status="error", error=f"{type(exc).__name__}: {exc}")
+
+
+def ensure_index_building() -> None:
+    """Start the background build if the index isn't ready or already building."""
+    global _build_thread
+    with _index_lock:
+        if _mo_index.cache_info().currsize > 0:
+            _build_state.update(status="ready", error=None)
+            return
+        if _build_thread is not None and _build_thread.is_alive():
+            return
+        _build_state.update(status="building", error=None)
+        _build_thread = threading.Thread(
+            target=_build_index_bg, name="mo-index-build", daemon=True
+        )
+        _build_thread.start()
+
+
 def reset_mo_index() -> None:
+    global _build_thread
     with _index_lock:
         _mo_index.cache_clear()
+        _build_state.update(status="idle", error=None)
+        _build_thread = None
 
 
 def _envelope() -> dict:
@@ -199,6 +241,26 @@ def latest_run() -> dict:
         "unknown_rates": unknown_rate(profiles),
         "profile_count": processed,
         "intelligence": _envelope(),
+    }
+
+
+@router.get("/status")
+def mo_status() -> dict:
+    """Whether the MO index is ready — non-blocking, safe to poll.
+
+    Returns immediately: if the index is cached it reports ready; otherwise it
+    starts the background build (once) and reports "building". The client gates
+    the MO page on this, showing a setup modal until ready, so a cold process
+    never blocks a page load past the HTTP limit.
+    """
+    if index_ready():
+        return {"status": "ready", "ready": True, "count": len(mo_index())}
+    ensure_index_building()
+    return {
+        "status": _build_state["status"],
+        "ready": False,
+        "count": 0,
+        "error": _build_state["error"],
     }
 
 

@@ -12,6 +12,7 @@ import {
   fetchMoCase,
   fetchMoProfiles,
   fetchMoRun,
+  fetchMoStatus,
   fetchMoVocabulary,
   fetchRelated,
   MO_FIELDS,
@@ -23,6 +24,88 @@ import { useCachedQuery } from "../lib/queryCache";
 import { Spinner } from "./Loading";
 
 const PAGE_SIZE = 15;
+
+// Module scope so it survives the tab unmounting: once the backend index is
+// ready in this session, revisiting the MO tab skips the setup modal entirely
+// (the "check cache first on next load" behaviour) while still confirming in
+// the background.
+let moIndexReady = false;
+
+/** Poll /status until the corpus index is built, without ever blocking a load. */
+function useMoReady(): { ready: boolean; status: string; error: string | null } {
+  const [ready, setReady] = useState(moIndexReady);
+  const [status, setStatus] = useState(moIndexReady ? "ready" : "building");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (moIndexReady) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const s = await fetchMoStatus();
+        if (!alive) return;
+        setStatus(s.status);
+        setError(s.error ?? null);
+        if (s.ready) {
+          moIndexReady = true;
+          setReady(true);
+          return;
+        }
+      } catch (e) {
+        if (!alive) return;
+        setError(String(e));
+      }
+      timer = setTimeout(tick, 1500);
+    };
+    tick();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  return { ready, status, error };
+}
+
+/** First-load setup gate: the index is being built off the request path, so we
+ *  show progress instead of hanging the page (which used to time out). */
+function MoSetup({ status, error }: { status: string; error: string | null }) {
+  return (
+    <div className="mo-setup">
+      <div className="mo-setup-card">
+        {error ? (
+          <>
+            <h2>Couldn’t set up MO profiles</h2>
+            <p className="muted">{error}</p>
+            <button className="expand" onClick={() => window.location.reload()}>
+              Retry
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="mo-setup-spinner" aria-hidden />
+            <h2>Setting up MO profiles…</h2>
+            <p className="muted">
+              Reading each FIR narrative and extracting its modus operandi. This runs
+              once — the next visit opens instantly.
+            </p>
+            <p className="mo-setup-status">
+              {status === "building" ? "Extracting…" : status}
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** MO tab entry point: gate the console on the index being ready. */
+export function MoView() {
+  const { ready, status, error } = useMoReady();
+  if (!ready) return <MoSetup status={status} error={error} />;
+  return <MoConsole />;
+}
 
 const UNKNOWN = "UNKNOWN";
 
@@ -46,7 +129,7 @@ function Narrative({ text, span }: { text: string; span: [number, number] | null
   );
 }
 
-export function MoView() {
+function MoConsole() {
   // Static run stats + filter vocabulary — cached so revisiting the tab is
   // instant (PERF-001). The profile list stays server-paged/debounced below.
   const { data: run = null } = useCachedQuery("mo:run", fetchMoRun);

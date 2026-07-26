@@ -79,6 +79,18 @@ async function get<T>(path: string): Promise<T> {
 
 export const fetchMoRun = () => get<MoRun>("/api/v1/mo/runs/latest");
 
+export interface MoStatus {
+  /** "idle" | "building" | "ready" | "error" */
+  status: string;
+  ready: boolean;
+  count: number;
+  error?: string | null;
+}
+
+/** Non-blocking readiness probe. The first call on a cold backend kicks off the
+ *  index build in the background and returns "building"; poll until `ready`. */
+export const fetchMoStatus = () => get<MoStatus>("/api/v1/mo/status");
+
 export interface MoVocabulary {
   crime_action: string[];
   target_type: string[];
@@ -112,7 +124,7 @@ export const fetchMoProfiles = (opts: {
   if (opts.action) p.set("action", opts.action);
   if (opts.target) p.set("target", opts.target);
   if (opts.mobility) p.set("mobility", opts.mobility);
-  p.set("limit", String(opts.limit ?? 40));
+  p.set("limit", String(opts.limit ?? 15));
   p.set("offset", String(opts.offset ?? 0));
   return get<MoPage>(`/api/v1/mo/profiles?${p}`);
 };
