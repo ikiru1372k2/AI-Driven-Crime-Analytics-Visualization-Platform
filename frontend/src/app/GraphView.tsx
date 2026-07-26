@@ -12,9 +12,9 @@
 import { type Core } from "cytoscape";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  fetchAreaCases,
   fetchAssociations,
   fetchCaseBasic,
-  fetchClassifications,
   fetchNodeDetail,
   fetchPerson,
   fetchSubgraph,
@@ -27,22 +27,27 @@ import {
   type PersonDetail,
   type Subgraph,
 } from "../lib/graphApi";
+import { fetchMeta, type Meta } from "../lib/api";
 import { useCachedQuery } from "../lib/queryCache";
 import { GraphControls } from "./GraphControls";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { GraphHoverTooltip } from "./GraphHoverTooltip";
+import { GraphPager, GraphStats } from "./GraphPager";
 import { GraphRail } from "./GraphRail";
 import { Spinner } from "./Loading";
 import {
   ALL_VIEW_KEYS,
+  areaLabelFor,
+  buildAreaGraph,
   buildPersonGraph,
   canNavigateNode,
   DEFAULT_SEED_CASE,
   expandLoadingMessage,
   type ViewSnapshot,
 } from "./graphConfig";
-import { initCytoscape, type HoverInfo } from "./graphCytoscape";
+import { type HoverInfo } from "./graphCytoscape";
 import { buildPreFilter, type SeedAttrs } from "./graphPreFilter";
+import { useGraphCanvas } from "./useGraphCanvas";
 
 export interface GraphSeed {
   type: NodeType;
@@ -68,8 +73,9 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
   const [merged, setMerged] = useState<{ nodes: Map<string, GraphNode>; edges: Map<string, GraphEdge> }>(
     () => ({ nodes: new Map(), edges: new Map() }),
   );
-  // Legend is tiny and static — cache it so tab revisits don't refetch (PERF-001).
-  const { data: legend = [] } = useCachedQuery("graph:classifications", fetchClassifications);
+  // District/station lookups for the seed dropdowns + area-view labels. Cached
+  // so tab revisits don't refetch (PERF-001).
+  const { data: meta = null } = useCachedQuery<Meta>("meta", fetchMeta);
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [caseBasic, setCaseBasic] = useState<CaseBasic | null>(null);
   const [person, setPerson] = useState<PersonDetail | null>(null);
@@ -82,6 +88,8 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
   const [expandable, setExpandable] = useState<Record<string, number>>({});
   // whether we've drilled into an entity (View belongs to the overview only)
   const [drilled, setDrilled] = useState(false);
+  // true while a DISTRICT/POLICE_STATION seed lists its cases (hides View/Filter)
+  const [areaMode, setAreaMode] = useState(false);
   // pagination of an expansion's related cases (a district can have hundreds)
   const [page, setPage] = useState(0);
   const [pageInfo, setPageInfo] = useState<{ total: number; offset: number; count: number } | null>(
@@ -108,6 +116,10 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
   const expandedRef = useRef(new Set<string>());
   // the entity currently in focus — what a Filter narrows (the last one opened)
   const activeFocusRef = useRef<string | null>(null);
+  // the area (district/station) currently listed, so the pager can re-page it
+  const areaRef = useRef<{ type: "DISTRICT" | "POLICE_STATION"; id: string; label: string } | null>(
+    null,
+  );
   // the seed case's own attributes (from the overview) — used to pre-apply a
   // "similar cases" filter (its crime type, district and the suspect's profile)
   // when the user expands an entity (see buildPreFilter)
@@ -170,9 +182,57 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
     setEdgeDetail(null);
   }, []);
 
+  // meta (district/station lookups) as a ref for area-label resolution.
+  const metaRef = useRef<Meta | null>(meta);
+  metaRef.current = meta;
+
+  // Seed a DISTRICT / POLICE_STATION: list every case in that area (paged, no
+  // filters — "all cases here", not "similar"). The pager re-pages via areaRef.
+  const showArea = useCallback(
+    async (type: "DISTRICT" | "POLICE_STATION", id: string, pg = 0) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const kind = type === "DISTRICT" ? "district" : "station";
+        const res = await fetchAreaCases(kind, id, { limit: PAGE_SIZE, offset: pg * PAGE_SIZE });
+        const label = areaLabelFor(metaRef.current, type, id);
+        const { nodes, edges, centerId } = buildAreaGraph(type, id, label, res.cases);
+        setSubgraph(null);
+        setMerged({ nodes, edges }); // REPLACE — a fresh area view
+        setExpandable({});
+        setDrilled(false); // a top-level view (no Back), but paged like an expansion
+        setAreaMode(true);
+        areaRef.current = { type, id, label };
+        activeFocusRef.current = centerId; // labels the stats bar; no Filter here
+        expandedRef.current = new Set();
+        setFocusId(null); // the whole view is the area → fit it, no dimming
+        setPage(pg);
+        setResultCount(res.total);
+        setPageInfo({ total: res.total, offset: res.offset, count: res.cases.length });
+        clearPanels();
+      } catch (e) {
+        setError(String(e instanceof Error ? e.message : e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [clearPanels],
+  );
+
   const load = useCallback(
     async (type: NodeType, id: string, merge = false) => {
-      if (!merge) setLoadingMsg("Loading case overview…");
+      // DISTRICT / POLICE_STATION seeds list the area's cases directly (paged);
+      // expansions of such nodes inside a subgraph (merge) fall through below.
+      if (!merge && (type === "DISTRICT" || type === "POLICE_STATION")) {
+        setLoadingMsg("Loading cases in this area…");
+        await showArea(type, id, 0);
+        return;
+      }
+      if (!merge) {
+        setLoadingMsg("Loading case overview…");
+        areaRef.current = null;
+        setAreaMode(false);
+      }
       setLoading(true);
       setError(null);
       try {
@@ -220,7 +280,7 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
         setLoading(false);
       }
     },
-    [clearPanels],
+    [clearPanels, showArea],
   );
 
   // Show ONE entity's expansion (a place or charge) as a self-contained view:
@@ -273,12 +333,14 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
   // page through a large expansion
   const gotoPage = useCallback(
     (pg: number) => {
-      if (activeFocusRef.current) {
-        setLoadingMsg("Loading more cases…");
+      setLoadingMsg("Loading more cases…");
+      if (areaRef.current) {
+        void showArea(areaRef.current.type, areaRef.current.id, pg);
+      } else if (activeFocusRef.current) {
         void showFocus(activeFocusRef.current, pg);
       }
     },
-    [showFocus],
+    [showArea, showFocus],
   );
 
   // seed from URL/props, else bootstrap from the sample case (its accused is
@@ -415,6 +477,9 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
     const leaving = activeFocusRef.current;
     const prev = historyRef.current.pop();
     if (prev) {
+      // Back always returns to an association/subgraph view, never an area list.
+      setAreaMode(false);
+      areaRef.current = null;
       setMerged({ nodes: prev.nodes, edges: prev.edges });
       setSeedType(prev.type);
       setSeedId(prev.id);
@@ -437,67 +502,13 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
     }
   }, []);
 
-  // (re)draw cytoscape when the merged element set changes. All layout/style
-  // and event wiring lives in initCytoscape; the component supplies live refs
-  // and the callbacks that turn taps/hovers into state changes.
-  useEffect(() => {
-    if (!containerRef.current) return;
-    cyRef.current?.destroy();
-    const cy = initCytoscape(containerRef.current, {
-      merged,
-      viewDims,
-      expandable,
-      expandedSet: expandedRef.current,
-      seedNodeId: `${seedType}:${seedId}`,
-      theme,
-      focusIdRef,
-      seedRef,
-      onExpand: expand,
-      onOpenNode: (type, ref) => {
-        openNode(type, ref);
-        setShowDetail(true);
-      },
-      onOpenPerson: openPerson,
-      onEdgeTap: (edgeId) => {
-        const e = merged.edges.get(edgeId);
-        if (e) {
-          clearPanels();
-          setEdgeDetail(e);
-          setShowDetail(false); // surface via the info button, open on click
-        }
-      },
-      onCanvasTap: () => {
-        clearPanels();
-        setShowDetail(false);
-      },
-      onHover: setHover,
-    });
-    cyRef.current = cy;
-    return () => {
-      cy.destroy();
-      cyRef.current = null;
-    };
-  }, [merged, openNode, openPerson, expand, clearPanels, expandable, theme, viewDims, seedType, seedId]);
-
-  // zoom-to-cluster: when a node is focused (tapped), dim the rest and animate
-  // the camera to fit that node and its linked records
-  useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy) return;
-    // no focus → whole graph is the subject: clear any dimming and show all
-    if (!focusId) {
-      cy.elements().removeClass("dim");
-      cy.nodes(":selected").unselect();
-      return;
-    }
-    const node = cy.getElementById(focusId);
-    if (node.empty()) return;
-    const cluster = node.closedNeighborhood();
-    cy.elements().removeClass("dim");
-    cy.elements().not(cluster).addClass("dim");
-    node.select();
-    cy.animate({ fit: { eles: cluster, padding: 90 }, duration: 550, easing: "ease-in-out" });
-  }, [focusId, merged]);
+  // Cytoscape lifecycle + zoom-to-cluster; owns cyRef, turns taps into state.
+  useGraphCanvas({
+    containerRef, cyRef, merged, viewDims, expandable, expandedSet: expandedRef.current,
+    seedType, seedId, theme, focusId, focusIdRef, seedRef,
+    onExpand: expand, onOpenNode: openNode, onOpenPerson: openPerson,
+    clearPanels, setShowDetail, setEdgeDetail, setHover,
+  });
 
   const stubs = subgraph?.stubs;
   // label of the entity currently expanded (for the stats bar)
@@ -517,7 +528,7 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
         setSeedId={setSeedId}
         navigate={navigate}
         loading={loading}
-        legend={legend}
+        meta={meta}
         stubs={stubs}
         expand={expand}
         error={error}
@@ -530,8 +541,8 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
           </button>
         )}
         <GraphControls
-          showView={!drilled}
-          showFilter={drilled}
+          showView={!drilled && !areaMode}
+          showFilter={drilled && !areaMode}
           viewDims={viewDims}
           onToggleDim={(k) =>
             setViewDims((prev) => {
@@ -546,15 +557,7 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
           resultCount={resultCount}
           expandedType={focusType}
         />
-        {drilled && pageInfo && (
-          <div className="graph-stats" role="status">
-            {focusLabel ? `${focusLabel} · ` : ""}
-            {pageInfo.total} case{pageInfo.total === 1 ? "" : "s"}
-            {pageInfo.total > PAGE_SIZE
-              ? ` (showing ${pageInfo.offset + 1}–${pageInfo.offset + pageInfo.count})`
-              : ""}
-          </div>
-        )}
+        {pageInfo && <GraphStats focusLabel={focusLabel} pageInfo={pageInfo} pageSize={PAGE_SIZE} />}
         {hover && <GraphHoverTooltip hover={hover} />}
         <div ref={containerRef} className="graph-canvas" aria-label="Association graph canvas" />
         {loading && (
@@ -563,21 +566,14 @@ export function GraphView({ seed, onSeed, theme, onSeeSimilar }: Props) {
           </div>
         )}
 
-        {drilled && pageInfo && pageInfo.total > PAGE_SIZE && (
-          <div className="graph-pager" role="navigation" aria-label="Case pages">
-            <button disabled={page === 0 || loading} onClick={() => gotoPage(page - 1)}>
-              &#8249; Prev
-            </button>
-            <span>
-              Page {page + 1} / {Math.ceil(pageInfo.total / PAGE_SIZE)}
-            </span>
-            <button
-              disabled={(page + 1) * PAGE_SIZE >= pageInfo.total || loading}
-              onClick={() => gotoPage(page + 1)}
-            >
-              Next &#8250;
-            </button>
-          </div>
+        {pageInfo && (
+          <GraphPager
+            page={page}
+            loading={loading}
+            pageInfo={pageInfo}
+            pageSize={PAGE_SIZE}
+            onGoto={gotoPage}
+          />
         )}
 
         {showDetail && (

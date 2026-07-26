@@ -51,7 +51,14 @@ export const EDGE_STYLE: Record<string, { color: string; style: string; width: n
   HUMAN_CONFIRMED: { color: "#3c9a5f", style: "solid", width: 4 },
 };
 
-export const SEED_TYPES: NodeType[] = ["CASE", "ACCUSED_RECORD", "POLICE_STATION", "DISTRICT"];
+export const SEED_TYPES: NodeType[] = ["CASE", "POLICE_STATION", "DISTRICT"];
+
+/** Human labels for the seed-type dropdown (the enum values read poorly). */
+export const SEED_TYPE_LABELS: Record<string, string> = {
+  CASE: "Case (FIR)",
+  POLICE_STATION: "Police station",
+  DISTRICT: "District",
+};
 
 /** A saved view for the Back stack: the graph AND everything the stats bar /
  *  pager / zoom read from, so Back restores a view exactly as it was. */
@@ -208,7 +215,10 @@ export function buildPersonGraph(person: PersonDetail): {
       node_id: caseNodeId,
       node_type: "CASE",
       entity_ref_id: c.case_id,
-      label: c.crime_no ?? c.subhead_name ?? `Case ${c.case_id}`,
+      // Label by case number, matching every other CASE node in the graph
+      // (the backend engine labels these "Case {CaseMasterID}"). Showing the
+      // FIR crime_no here made the same case read differently across views.
+      label: `Case ${c.case_id}`,
       depth: 1,
     });
     edges.set(`${centerId}->${caseNodeId}`, {
@@ -220,6 +230,72 @@ export function buildPersonGraph(person: PersonDetail): {
       evidence_case_id: Number(c.case_id),
       derivation: "matched by name+age+gender",
       classification: "POTENTIAL_ASSOCIATION",
+    });
+  }
+  return { nodes, edges, centerId };
+}
+
+/** Resolve a district/station id to its display name from the meta lookups
+ *  (falls back to a "District 44" style label until meta has loaded). */
+export function areaLabelFor(
+  meta: { districts: { district_id: string; district_name: string }[]; stations: { station_id: string; station_name: string }[] } | null,
+  type: "DISTRICT" | "POLICE_STATION",
+  id: string,
+): string {
+  if (type === "DISTRICT")
+    return (
+      meta?.districts.find((d) => String(d.district_id) === String(id))?.district_name ??
+      `District ${id}`
+    );
+  return (
+    meta?.stations.find((s) => String(s.station_id) === String(id))?.station_name ?? `Station ${id}`
+  );
+}
+
+/** Build an area-centered graph: a DISTRICT or POLICE_STATION at the center with
+ *  one CASE node per case in that area (a page of them) and a center->case edge.
+ *  The link is a plain FACT restatement (the case is recorded in this area — no
+ *  inference). Case nodes are labeled by case number, like every other CASE node.
+ *  Pure + extracted so GraphView stays under the source-size gate. */
+export function buildAreaGraph(
+  seedType: "DISTRICT" | "POLICE_STATION",
+  seedId: string,
+  seedLabel: string,
+  cases: { CaseMasterID: string }[],
+): {
+  nodes: Map<string, GraphNode>;
+  edges: Map<string, GraphEdge>;
+  centerId: string;
+} {
+  const centerId = `${seedType}:${seedId}`;
+  const nodes = new Map<string, GraphNode>();
+  const edges = new Map<string, GraphEdge>();
+  nodes.set(centerId, {
+    node_id: centerId,
+    node_type: seedType,
+    entity_ref_id: seedId,
+    label: seedLabel,
+    depth: 0,
+  });
+  const rel = seedType === "DISTRICT" ? "IN_DISTRICT" : "AT_STATION";
+  for (const c of cases) {
+    const caseNodeId = `CASE:${c.CaseMasterID}`;
+    nodes.set(caseNodeId, {
+      node_id: caseNodeId,
+      node_type: "CASE",
+      entity_ref_id: c.CaseMasterID,
+      label: `Case ${c.CaseMasterID}`,
+      depth: 1,
+    });
+    edges.set(`${centerId}->${caseNodeId}`, {
+      edge_id: `${centerId}->${caseNodeId}`,
+      source: centerId,
+      target: caseNodeId,
+      relationship_type: rel,
+      weight: 1,
+      evidence_case_id: Number(c.CaseMasterID),
+      derivation: "recorded in area",
+      classification: "FACT",
     });
   }
   return { nodes, edges, centerId };
